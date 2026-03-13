@@ -1,0 +1,57 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* React Flow overrides for better integration with our design system */
+.react-flow__node {
+  border-radius: 8px !important;
+}
+
+.react-flow__minimap {
+  border-radius: 8px !important;
+  overflow: hidden;
+}
+
+.react-flow__controls {
+  border-radius: 8px !important;
+  overflow: hidden;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.1) !important;
+}
+
+.react-flow__controls button {
+  border-radius: 0 !important;
+}
+
+/* Scrollbar styling for log panel */
+.overflow-y-auto::-webkit-scrollbar {
+  width: 4px;
+}
+
+.overflow-y-auto::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.overflow-y-auto::-webkit-scrollbar-thumb {
+  background: #374151;
+  border-radius: 2px;
+}
+
+.overflow-y-auto::-webkit-scrollbar-thumb:hover {
+  background: #4b5563;
+}
+
+/* Smooth transition for node animations */
+.react-flow__node-agentNode {
+  transition: transform 0.3s ease-out !important;
+}
+
+/* Font smoothing */
+* {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Custom scale for subtle hover effects */
+.hover\:scale-102:hover {
+  transform: scale(1.02);
+}

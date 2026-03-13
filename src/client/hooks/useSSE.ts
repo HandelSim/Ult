@@ -1,0 +1,105 @@
+/**
+ * useSSE - Custom hook for Server-Sent Events subscriptions.
+ * Handles connection, reconnection, and cleanup automatically.
+ */
+import { useEffect, useRef, useCallback } from 'react';
+
+type SSEEventHandler = (event: string, data: unknown) => void;
+
+interface UseSSEOptions {
+  onMessage?: SSEEventHandler;
+  onError?: (error: Event) => void;
+  onOpen?: () => void;
+  reconnectDelay?: number;
+  maxReconnects?: number;
+}
+
+/**
+ * Subscribe to an SSE endpoint and receive typed events.
+ * Automatically reconnects on connection loss (with backoff).
+ */
+export function useSSE(url: string, options: UseSSEOptions = {}) {
+  const {
+    onMessage,
+    onError,
+    onOpen,
+    reconnectDelay = 3000,
+    maxReconnects = 10,
+  } = options;
+
+  const esRef = useRef<EventSource | null>(null);
+  const reconnectCount = useRef(0);
+  const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isMounted = useRef(true);
+
+  const connect = useCallback(() => {
+    if (!isMounted.current || !url) return;
+
+    const es = new EventSource(url);
+    esRef.current = es;
+
+    es.onopen = () => {
+      reconnectCount.current = 0;
+      onOpen?.();
+    };
+
+    // Handle specific named events from the server
+    const namedEvents = [
+      'connected', 'node:status', 'node:created', 'node:updated', 'node:deleted',
+      'log:output', 'log:error', 'log:complete', 'log:history',
+      'verification', 'project:created', 'project:deleted',
+      'contract:created', 'contract:updated', 'contract:deleted',
+    ];
+
+    for (const eventName of namedEvents) {
+      es.addEventListener(eventName, (e: MessageEvent) => {
+        try {
+          const data = JSON.parse(e.data);
+          onMessage?.(eventName, data);
+        } catch {
+          onMessage?.(eventName, e.data);
+        }
+      });
+    }
+
+    // Fallback for unnamed messages
+    es.onmessage = (e: MessageEvent) => {
+      try {
+        const data = JSON.parse(e.data);
+        onMessage?.('message', data);
+      } catch {
+        onMessage?.('message', e.data);
+      }
+    };
+
+    es.onerror = (error) => {
+      onError?.(error);
+      es.close();
+
+      if (!isMounted.current) return;
+
+      if (reconnectCount.current < maxReconnects) {
+        reconnectCount.current++;
+        const delay = reconnectDelay * Math.min(reconnectCount.current, 5);
+        reconnectTimer.current = setTimeout(connect, delay);
+      }
+    };
+  }, [url, onMessage, onError, onOpen, reconnectDelay, maxReconnects]);
+
+  useEffect(() => {
+    isMounted.current = true;
+    connect();
+
+    return () => {
+      isMounted.current = false;
+      if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
+      esRef.current?.close();
+    };
+  }, [connect]);
+
+  const close = useCallback(() => {
+    esRef.current?.close();
+  }, []);
+
+  return { close };
+}
