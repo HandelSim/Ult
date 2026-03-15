@@ -1,7 +1,7 @@
 {
-  "name": "agent-tree-orchestrator",
+  "name": "schema",
   "version": "1.0.0",
-  "description": "Agent Tree Orchestrator - Recursive AI agent decomposition and execution platform",
+  "description": "SCHEMA - Self-Constructing Hierarchy for Entire Managed Applications",
   "private": true,
   "workspaces": [
     "src/client",
