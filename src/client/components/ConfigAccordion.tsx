@@ -90,6 +90,19 @@ export const ConfigAccordion: React.FC<ConfigAccordionProps> = ({ node, onUpdate
               <option value="opus">Claude Opus 4.5 (Most Capable)</option>
             </select>
           </div>
+          <div>
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={node.node_type === 'leaf'}
+                onChange={e => !readOnly && onUpdate({ node_type: e.target.checked ? 'leaf' : 'orchestrator' })}
+                disabled={readOnly}
+                className="w-4 h-4 rounded border-gray-600 bg-gray-700 accent-blue-500 disabled:opacity-50 cursor-pointer"
+              />
+              <span className="text-xs font-medium text-gray-300">Leaf Node (no decomposition)</span>
+            </label>
+            <p className="text-xs text-gray-600 mt-0.5 ml-6">When checked, approving will execute directly without creating children.</p>
+          </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-medium text-gray-400 mb-1">Max Iterations</label>
