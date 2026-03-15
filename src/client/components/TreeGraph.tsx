@@ -32,13 +32,13 @@ const V_SPACING = 60;
 
 // Status colors for minimap dots and node backgrounds
 const STATUS_NODE_STYLES: Record<string, { bg: string; border: string; ring: string }> = {
-  pending:     { bg: 'bg-gray-50',    border: 'border-gray-300',   ring: 'ring-gray-200' },
-  approved:    { bg: 'bg-blue-50',    border: 'border-blue-400',   ring: 'ring-blue-200' },
-  decomposing: { bg: 'bg-yellow-50',  border: 'border-yellow-400', ring: 'ring-yellow-200' },
-  running:     { bg: 'bg-emerald-50', border: 'border-emerald-400',ring: 'ring-emerald-200' },
-  completed:   { bg: 'bg-green-50',   border: 'border-green-400',  ring: 'ring-green-200' },
-  failed:      { bg: 'bg-red-50',     border: 'border-red-400',    ring: 'ring-red-200' },
-  rejected:    { bg: 'bg-orange-50',  border: 'border-orange-400', ring: 'ring-orange-200' },
+  pending:     { bg: 'bg-gray-800',    border: 'border-gray-600',   ring: 'ring-gray-500' },
+  approved:    { bg: 'bg-blue-950',    border: 'border-blue-600',   ring: 'ring-blue-500' },
+  decomposing: { bg: 'bg-yellow-950',  border: 'border-yellow-600', ring: 'ring-yellow-500' },
+  running:     { bg: 'bg-emerald-950', border: 'border-emerald-600',ring: 'ring-emerald-500' },
+  completed:   { bg: 'bg-green-950',   border: 'border-green-600',  ring: 'ring-green-500' },
+  failed:      { bg: 'bg-red-950',     border: 'border-red-600',    ring: 'ring-red-500' },
+  rejected:    { bg: 'bg-orange-950',  border: 'border-orange-600', ring: 'ring-orange-500' },
 };
 
 const STATUS_MINIMAP_COLORS: Record<string, string> = {
@@ -77,11 +77,11 @@ const AgentNode: React.FC<NodeProps> = ({ data }) => {
       <Handle type="target" position={Position.Top} className="!w-2 !h-2 !bg-gray-400" />
 
       <div className="space-y-1">
-        <div className="font-semibold text-xs text-gray-800 truncate leading-tight" title={node.name}>
+        <div className="font-semibold text-xs text-gray-100 truncate leading-tight" title={node.name}>
           {node.name}
         </div>
         {node.role && (
-          <div className="text-xs text-gray-500 truncate" title={node.role}>
+          <div className="text-xs text-gray-400 truncate" title={node.role}>
             {node.role}
           </div>
         )}
@@ -221,7 +221,7 @@ export const TreeGraph: React.FC<TreeGraphProps> = ({
   }, [nodes]);
 
   return (
-    <div className="w-full h-full bg-gray-50">
+    <div className="w-full h-full bg-gray-950">
       <ReactFlow
         nodes={flowNodes}
         edges={flowEdges}
@@ -234,34 +234,34 @@ export const TreeGraph: React.FC<TreeGraphProps> = ({
         maxZoom={2}
         defaultEdgeOptions={{ type: 'smoothstep' }}
       >
-        <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="#e2e8f0" />
+        <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="#1e293b" />
         <Controls />
         <MiniMap
           nodeColor={getMinimapNodeColor}
           nodeStrokeWidth={2}
           zoomable
           pannable
-          style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}
+          style={{ background: '#111827', border: '1px solid #374151' }}
         />
       </ReactFlow>
 
       {/* Legend */}
-      <div className="absolute bottom-12 left-2 bg-white border border-gray-200 rounded-lg p-2 shadow-sm text-xs space-y-1 pointer-events-none">
-        <div className="font-medium text-gray-600 mb-1">Legend</div>
+      <div className="absolute bottom-12 left-2 bg-gray-900 border border-gray-700 rounded-lg p-2 shadow-sm text-xs space-y-1 pointer-events-none">
+        <div className="font-medium text-gray-400 mb-1">Legend</div>
         {Object.entries(STATUS_MINIMAP_COLORS).map(([status, color]) => (
           <div key={status} className="flex items-center gap-1.5">
             <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
-            <span className="capitalize text-gray-600">{status}</span>
+            <span className="capitalize text-gray-400">{status}</span>
           </div>
         ))}
-        <div className="border-t border-gray-100 pt-1 mt-1">
+        <div className="border-t border-gray-700 pt-1 mt-1">
           <div className="flex items-center gap-1.5">
             <svg width="20" height="6"><line x1="0" y1="3" x2="20" y2="3" stroke="#94a3b8" strokeWidth="2"/></svg>
-            <span className="text-gray-600">parent-child</span>
+            <span className="text-gray-400">parent-child</span>
           </div>
           <div className="flex items-center gap-1.5">
             <svg width="20" height="6"><line x1="0" y1="3" x2="20" y2="3" stroke="#a78bfa" strokeWidth="1.5" strokeDasharray="3,3"/></svg>
-            <span className="text-gray-600">dependency</span>
+            <span className="text-gray-400">dependency</span>
           </div>
         </div>
       </div>

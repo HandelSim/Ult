@@ -100,26 +100,26 @@ export const NodeDetail: React.FC<NodeDetailProps> = ({
   };
 
   return (
-    <div className="h-full flex flex-col bg-white overflow-hidden">
+    <div className="h-full flex flex-col bg-gray-800 overflow-hidden">
       {/* Header */}
-      <div className="px-4 py-3 border-b border-gray-200 flex-shrink-0">
+      <div className="px-4 py-3 border-b border-gray-700 flex-shrink-0">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
-            <h2 className="text-base font-semibold text-gray-900 truncate">{node.name}</h2>
+            <h2 className="text-base font-semibold text-gray-100 truncate">{node.name}</h2>
             <div className="flex items-center gap-2 mt-1 flex-wrap">
               <StatusBadge status={node.status} />
               <TypeBadge type={node.node_type} />
               {node.role && (
-                <span className="text-xs text-gray-500 italic">{node.role}</span>
+                <span className="text-xs text-gray-400 italic">{node.role}</span>
               )}
-              <span className="text-xs text-gray-400">Depth: {node.depth}</span>
+              <span className="text-xs text-gray-500">Depth: {node.depth}</span>
             </div>
           </div>
           <div className="flex items-center gap-1.5 flex-shrink-0">
             {canEdit && !editing && (
               <button
                 onClick={() => setEditing(true)}
-                className="text-xs px-2 py-1 rounded border border-gray-300 text-gray-600 hover:bg-gray-100"
+                className="text-xs px-2 py-1 rounded border border-gray-600 text-gray-300 hover:bg-gray-700"
               >
                 Edit
               </button>
@@ -135,7 +135,7 @@ export const NodeDetail: React.FC<NodeDetailProps> = ({
                 </button>
                 <button
                   onClick={() => { setDraftNode(node); setEditing(false); }}
-                  className="text-xs px-2 py-1 rounded border border-gray-300 text-gray-600 hover:bg-gray-100"
+                  className="text-xs px-2 py-1 rounded border border-gray-600 text-gray-300 hover:bg-gray-700"
                 >
                   Cancel
                 </button>
@@ -146,7 +146,7 @@ export const NodeDetail: React.FC<NodeDetailProps> = ({
 
         {/* Timing info */}
         {(node.started_at || node.completed_at) && (
-          <div className="text-xs text-gray-400 mt-1 flex gap-3">
+          <div className="text-xs text-gray-500 mt-1 flex gap-3">
             {node.started_at && <span>Started: {new Date(node.started_at).toLocaleString()}</span>}
             {node.completed_at && <span>Completed: {new Date(node.completed_at).toLocaleString()}</span>}
           </div>
@@ -154,7 +154,7 @@ export const NodeDetail: React.FC<NodeDetailProps> = ({
       </div>
 
       {/* Action buttons */}
-      <div className="px-4 py-2 border-b border-gray-100 flex gap-2 flex-wrap flex-shrink-0 bg-gray-50">
+      <div className="px-4 py-2 border-b border-gray-700 flex gap-2 flex-wrap flex-shrink-0 bg-gray-900">
         {canApprove && (
           <>
             {node.node_type !== 'leaf' && (
@@ -187,7 +187,7 @@ export const NodeDetail: React.FC<NodeDetailProps> = ({
         )}
 
         {isRunning && (
-          <span className="text-xs px-3 py-1.5 text-yellow-700 bg-yellow-100 rounded font-medium animate-pulse">
+          <span className="text-xs px-3 py-1.5 text-yellow-300 bg-yellow-950 rounded font-medium animate-pulse">
             ⏳ {node.status === 'decomposing' ? 'Decomposing...' : 'Running...'}
           </span>
         )}
@@ -206,7 +206,7 @@ export const NodeDetail: React.FC<NodeDetailProps> = ({
           <button
             onClick={() => setShowRejectModal(true)}
             disabled={!!actionLoading || isRunning}
-            className="text-xs px-3 py-1.5 rounded border border-red-300 text-red-600 hover:bg-red-50 disabled:opacity-50"
+            className="text-xs px-3 py-1.5 rounded border border-red-800 text-red-400 hover:bg-red-950 disabled:opacity-50"
           >
             ✕ Reject
           </button>
@@ -219,7 +219,7 @@ export const NodeDetail: React.FC<NodeDetailProps> = ({
             }
           }}
           disabled={!!actionLoading || isRunning}
-          className="ml-auto text-xs px-2 py-1.5 rounded border border-gray-200 text-gray-400 hover:bg-red-50 hover:text-red-500 hover:border-red-200 disabled:opacity-50"
+          className="ml-auto text-xs px-2 py-1.5 rounded border border-gray-700 text-gray-500 hover:bg-red-950 hover:text-red-400 hover:border-red-800 disabled:opacity-50"
         >
           🗑
         </button>
@@ -227,15 +227,15 @@ export const NodeDetail: React.FC<NodeDetailProps> = ({
 
       {/* Reject modal */}
       {showRejectModal && (
-        <div className="absolute inset-0 bg-black/40 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl p-5 w-80 shadow-xl">
-            <h3 className="font-semibold text-gray-900 mb-3">Reject Node</h3>
+        <div className="absolute inset-0 bg-black/60 flex items-center justify-center z-50">
+          <div className="bg-gray-800 border border-gray-700 rounded-xl p-5 w-80 shadow-xl">
+            <h3 className="font-semibold text-gray-100 mb-3">Reject Node</h3>
             <textarea
               value={rejectFeedback}
               onChange={e => setRejectFeedback(e.target.value)}
               placeholder="Reason for rejection (optional)..."
               rows={4}
-              className="w-full text-sm border border-gray-300 rounded p-2 mb-3 focus:outline-none focus:ring-1 focus:ring-red-500"
+              className="w-full text-sm border border-gray-600 bg-gray-700 text-gray-100 rounded p-2 mb-3 focus:outline-none focus:ring-1 focus:ring-red-500 placeholder-gray-500"
             />
             <div className="flex gap-2">
               <button
@@ -249,7 +249,7 @@ export const NodeDetail: React.FC<NodeDetailProps> = ({
               </button>
               <button
                 onClick={() => setShowRejectModal(false)}
-                className="flex-1 text-sm py-2 border border-gray-300 text-gray-700 rounded hover:bg-gray-50"
+                className="flex-1 text-sm py-2 border border-gray-600 text-gray-300 rounded hover:bg-gray-700"
               >
                 Cancel
               </button>
@@ -261,7 +261,7 @@ export const NodeDetail: React.FC<NodeDetailProps> = ({
       {/* Scrollable content */}
       <div className="flex-1 overflow-y-auto min-h-0">
         {/* Prompt */}
-        <div className="px-4 py-3 border-b border-gray-100">
+        <div className="px-4 py-3 border-b border-gray-700">
           <PromptEditor
             value={displayNode.prompt || ''}
             onChange={v => editing && updateDraft({ prompt: v })}
@@ -272,28 +272,28 @@ export const NodeDetail: React.FC<NodeDetailProps> = ({
         </div>
 
         {/* Role */}
-        <div className="px-4 py-2 border-b border-gray-100">
-          <label className="block text-xs font-medium text-gray-600 mb-1">Role</label>
+        <div className="px-4 py-2 border-b border-gray-700">
+          <label className="block text-xs font-medium text-gray-400 mb-1">Role</label>
           <input
             type="text"
             value={displayNode.role || ''}
             onChange={e => editing && updateDraft({ role: e.target.value })}
             readOnly={!editing}
             placeholder="e.g. Senior Backend Engineer"
-            className="w-full text-sm border border-gray-300 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-50"
+            className="w-full text-sm border border-gray-600 bg-gray-700 text-gray-100 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500 placeholder-gray-500 read-only:bg-gray-800"
           />
         </div>
 
         {/* Tabs */}
-        <div className="flex border-b border-gray-200 px-4">
+        <div className="flex border-b border-gray-700 px-4">
           {(['config', 'contracts', 'children'] as const).map(tab => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
               className={`px-3 py-2 text-xs font-medium capitalize transition-colors border-b-2 -mb-px ${
                 activeTab === tab
-                  ? 'border-blue-600 text-blue-700'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
+                  ? 'border-blue-500 text-blue-400'
+                  : 'border-transparent text-gray-500 hover:text-gray-300'
               }`}
             >
               {tab} {tab === 'contracts' && `(${nodeContracts.length})`}
@@ -332,10 +332,10 @@ export const NodeDetail: React.FC<NodeDetailProps> = ({
                 children.map(child => (
                   <div
                     key={child.id}
-                    className="flex items-center justify-between p-2 rounded border border-gray-200 text-sm"
+                    className="flex items-center justify-between p-2 rounded border border-gray-700 text-sm"
                   >
                     <div>
-                      <span className="font-medium text-gray-800">{child.name}</span>
+                      <span className="font-medium text-gray-200">{child.name}</span>
                       <span className="ml-2 text-xs text-gray-500">{child.role}</span>
                     </div>
                     <StatusBadge status={child.status} size="sm" />
@@ -348,9 +348,9 @@ export const NodeDetail: React.FC<NodeDetailProps> = ({
 
         {/* Error log display */}
         {node.error_log && (
-          <div className="mx-4 mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
-            <h4 className="text-xs font-medium text-red-700 mb-1">Error Log</h4>
-            <pre className="text-xs text-red-600 whitespace-pre-wrap font-mono">{node.error_log}</pre>
+          <div className="mx-4 mb-4 p-3 bg-red-950 border border-red-800 rounded-lg">
+            <h4 className="text-xs font-medium text-red-400 mb-1">Error Log</h4>
+            <pre className="text-xs text-red-300 whitespace-pre-wrap font-mono">{node.error_log}</pre>
           </div>
         )}
       </div>
