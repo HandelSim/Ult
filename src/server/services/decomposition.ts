@@ -10,6 +10,34 @@ import { getDb } from '../db';
 import { broadcastGlobal, broadcastToNode } from '../utils/sse';
 import { getDefaultHooks } from '../utils/hooks-templates';
 
+/**
+ * Rate limiting for auto-mode recursive decomposition.
+ * Stagger child decomposition launches to avoid bursting the Claude API with
+ * simultaneous requests when many non-leaf children are created at once.
+ * Each subsequent child gets an additional DECOMPOSE_STAGGER_MS delay.
+ */
+const DECOMPOSE_STAGGER_MS = 2000;
+
+/**
+ * Maximum number of decompositions that may run concurrently across the
+ * entire server process.  Prevents exponential fan-out in deep auto-mode trees.
+ */
+const MAX_CONCURRENT_DECOMPOSITIONS = 3;
+
+let activeDecompositions = 0;
+
+/** Acquire the decomposition semaphore, waiting if at capacity. */
+async function acquireDecompositionSlot(): Promise<void> {
+  while (activeDecompositions >= MAX_CONCURRENT_DECOMPOSITIONS) {
+    await new Promise(resolve => setTimeout(resolve, 500));
+  }
+  activeDecompositions++;
+}
+
+function releaseDecompositionSlot(): void {
+  if (activeDecompositions > 0) activeDecompositions--;
+}
+
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
@@ -178,6 +206,8 @@ function parseDecompositionResponse(content: string): DecompositionResult {
 /**
  * Main decomposition function.
  * Updates node status, calls Claude API, creates child nodes and contracts.
+ * Acquires the global concurrency semaphore before calling the Claude API to
+ * prevent exponential request bursts during auto-mode tree expansion.
  */
 export async function decomposeNode(nodeId: string): Promise<void> {
   if (!process.env.ANTHROPIC_API_KEY) {
@@ -224,12 +254,19 @@ export async function decomposeNode(nodeId: string): Promise<void> {
 
     broadcastToNode(nodeId, 'log', { message: 'Calling Claude API for decomposition...' });
 
-    // Use Claude Sonnet 4 for high-quality architectural decomposition
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-5',
-      max_tokens: 8192,
-      messages: [{ role: 'user', content: prompt }],
-    });
+    // Throttle concurrent API calls — wait for a free slot before proceeding
+    await acquireDecompositionSlot();
+    let response;
+    try {
+      // Use Claude Sonnet 4 for high-quality architectural decomposition
+      response = await anthropic.messages.create({
+        model: 'claude-sonnet-4-5',
+        max_tokens: 8192,
+        messages: [{ role: 'user', content: prompt }],
+      });
+    } finally {
+      releaseDecompositionSlot();
+    }
 
     const textContent = response.content.find(c => c.type === 'text');
     if (!textContent || textContent.type !== 'text') {
@@ -332,18 +369,25 @@ export async function decomposeNode(nodeId: string): Promise<void> {
       message: `Decomposition complete. Created ${createdNodes.length} child agents.`
     });
 
-    // In auto mode: approve all children and recursively decompose non-leaf ones
+    // In auto mode: approve all children and recursively decompose non-leaf ones.
+    // Stagger launches by DECOMPOSE_STAGGER_MS per child to avoid bursting the
+    // Claude API with simultaneous requests.
     if (isAutoMode) {
       broadcastToNode(nodeId, 'log', { message: 'Auto mode: approving all child nodes...' });
+      let staggerIndex = 0;
       for (const child of createdNodes) {
         db.prepare(`UPDATE nodes SET status = 'approved' WHERE id = ?`).run(child.id);
         broadcastGlobal('node:status', { nodeId: child.id, status: 'approved' });
         const childNode = db.prepare('SELECT node_type FROM nodes WHERE id = ?').get(child.id) as { node_type: string } | undefined;
         if (childNode && childNode.node_type !== 'leaf') {
-          // Decompose non-leaf children in background
-          decomposeNode(child.id).catch(err =>
-            console.error(`[auto-mode] Decompose failed for ${child.id}:`, err)
-          );
+          // Stagger each non-leaf child decomposition to avoid concurrent API burst
+          const launchDelay = staggerIndex * DECOMPOSE_STAGGER_MS;
+          staggerIndex++;
+          setTimeout(() => {
+            decomposeNode(child.id).catch(err =>
+              console.error(`[auto-mode] Decompose failed for ${child.id}:`, err)
+            );
+          }, launchDelay);
         }
       }
     }
