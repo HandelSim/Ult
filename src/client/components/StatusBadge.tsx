@@ -11,7 +11,7 @@ interface StatusBadgeProps {
 }
 
 const STATUS_CONFIG: Record<NodeStatus, { label: string; classes: string; dot: string }> = {
-  pending:     { label: 'Pending',      classes: 'bg-gray-100 text-gray-700 border-gray-300',     dot: 'bg-gray-400' },
+  pending:     { label: 'Awaiting Approval', classes: 'bg-gray-100 text-gray-700 border-gray-300',     dot: 'bg-gray-400' },
   approved:    { label: 'Approved',     classes: 'bg-blue-100 text-blue-700 border-blue-300',     dot: 'bg-blue-500' },
   decomposing: { label: 'Decomposing',  classes: 'bg-yellow-100 text-yellow-700 border-yellow-300', dot: 'bg-yellow-500 animate-pulse' },
   running:     { label: 'Running',      classes: 'bg-emerald-100 text-emerald-700 border-emerald-300', dot: 'bg-emerald-500 animate-pulse' },
@@ -39,7 +39,7 @@ interface TypeBadgeProps {
 }
 
 const TYPE_CONFIG: Record<NodeType, { label: string; classes: string }> = {
-  orchestrator: { label: 'Orchestrator', classes: 'bg-violet-100 text-violet-700 border-violet-300' },
+  orchestrator: { label: 'Composite', classes: 'bg-violet-100 text-violet-700 border-violet-300' },
   leaf:         { label: 'Leaf',         classes: 'bg-sky-100 text-sky-700 border-sky-300' },
   test:         { label: 'Test',         classes: 'bg-amber-100 text-amber-700 border-amber-300' },
 };
