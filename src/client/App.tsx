@@ -178,6 +178,13 @@ export default function App() {
   const tree = useTree(selectedProjectId);
   const { node: selectedNode, logs: nodeLogs, clearLogs } = useNode(tree.selectedNodeId);
 
+  // Sync projectMode from server when project changes
+  React.useEffect(() => {
+    if (tree.project) {
+      setProjectMode(tree.project.mode ?? 'manual');
+    }
+  }, [tree.project?.id, tree.project?.mode]);
+
   // Auto-select pending node once the tree has loaded for the new project
   React.useEffect(() => {
     if (pendingNodeSelect && tree.nodes.length > 0) {

@@ -193,7 +193,7 @@ export async function decomposeNode(nodeId: string): Promise<void> {
     'SELECT p.*, n.system_prompt FROM projects p JOIN nodes n ON p.root_node_id = n.id WHERE p.root_node_id IN (WITH RECURSIVE ancestors(id, parent_id) AS (SELECT id, parent_id FROM nodes WHERE id = ? UNION ALL SELECT n.id, n.parent_id FROM nodes n JOIN ancestors a ON n.id = a.parent_id) SELECT id FROM ancestors WHERE parent_id IS NULL)'
   ).get(nodeId);
 
-  // Simpler approach: walk up to root
+  // Walk up to root node
   let rootNode = node;
   while (rootNode.parent_id) {
     const parent = db.prepare('SELECT * FROM nodes WHERE id = ?').get(rootNode.parent_id) as NodeRow | undefined;
@@ -202,6 +202,12 @@ export async function decomposeNode(nodeId: string): Promise<void> {
   }
 
   const projectSpec = rootNode.system_prompt || rootNode.prompt || 'Build the specified software system.';
+
+  // Check project mode for auto-approve behaviour
+  const projectRecord = db.prepare(
+    'SELECT mode FROM projects WHERE root_node_id = ?'
+  ).get(rootNode.id) as { mode: string } | undefined;
+  const isAutoMode = projectRecord?.mode === 'auto';
 
   // Get sibling contracts (contracts belonging to parent node)
   const siblingContracts = node.parent_id
@@ -325,6 +331,22 @@ export async function decomposeNode(nodeId: string): Promise<void> {
     broadcastToNode(nodeId, 'log', {
       message: `Decomposition complete. Created ${createdNodes.length} child agents.`
     });
+
+    // In auto mode: approve all children and recursively decompose non-leaf ones
+    if (isAutoMode) {
+      broadcastToNode(nodeId, 'log', { message: 'Auto mode: approving all child nodes...' });
+      for (const child of createdNodes) {
+        db.prepare(`UPDATE nodes SET status = 'approved' WHERE id = ?`).run(child.id);
+        broadcastGlobal('node:status', { nodeId: child.id, status: 'approved' });
+        const childNode = db.prepare('SELECT node_type FROM nodes WHERE id = ?').get(child.id) as { node_type: string } | undefined;
+        if (childNode && childNode.node_type !== 'leaf') {
+          // Decompose non-leaf children in background
+          decomposeNode(child.id).catch(err =>
+            console.error(`[auto-mode] Decompose failed for ${child.id}:`, err)
+          );
+        }
+      }
+    }
 
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
