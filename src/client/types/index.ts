@@ -81,6 +81,7 @@ export interface Project {
   name: string;
   description: string | null;
   root_node_id: string | null;
+  mode: 'manual' | 'auto';
   created_at: string;
 }
 
