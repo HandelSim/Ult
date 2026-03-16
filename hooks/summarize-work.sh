@@ -1,5 +1,5 @@
 #!/bin/bash
-WORK_DESC="${1:-$(git -C /workspace log --oneline -5 2>/dev/null || echo "Recent work in the Architect")}"
+WORK_DESC="${1:-$(git -C /workspace log --oneline -5 2>/dev/null || echo "Recent work in the Forge")}"
 
 SUMMARY=$(claude -p --model claude-haiku-4-5-20251001 "Summarize this completed work in exactly 2 sentences. Be specific about what files or features changed: $WORK_DESC" 2>/dev/null)
 
@@ -12,8 +12,8 @@ const user=process.env.NATS_USER||URL_USER||\"kingdom\";
 const pass=process.env.NATS_PASSWORD||URL_PASS||\"\";
 (async()=>{
   const nc=await connect({servers:server,user,pass});
-  nc.publish(\"raven.ledger.architect\",jc.encode({agent:\"architect\",summary:process.env.SUMMARY,timestamp:new Date().toISOString()}));
+  nc.publish(\"raven.ledger.forge\",jc.encode({agent:\"forge\",summary:process.env.SUMMARY,timestamp:new Date().toISOString()}));
   await nc.drain();
 })().catch(e=>console.error(e.message));
-  " 2>/dev/null && echo "Published to architect ledger" || echo "NATS publish failed"
+  " 2>/dev/null && echo "Published to forge ledger" || echo "NATS publish failed"
 fi

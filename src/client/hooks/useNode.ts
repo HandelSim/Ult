@@ -49,6 +49,8 @@ export function useNode(nodeId: string | null): UseNodeReturn {
         allowed_paths: typeof raw['allowed_paths'] === 'string' ? JSON.parse(raw['allowed_paths'] as string || '[]') : raw['allowed_paths'] as string[],
         dependencies: typeof raw['dependencies'] === 'string' ? JSON.parse(raw['dependencies'] as string || '[]') : raw['dependencies'] as string[],
         context_files: typeof raw['context_files'] === 'string' ? JSON.parse(raw['context_files'] as string || '[]') : raw['context_files'] as string[],
+        apis_provided: typeof raw['apis_provided'] === 'string' ? JSON.parse(raw['apis_provided'] as string || '[]') : (raw['apis_provided'] as string[] || []),
+        apis_consumed: typeof raw['apis_consumed'] === 'string' ? JSON.parse(raw['apis_consumed'] as string || '[]') : (raw['apis_consumed'] as string[] || []),
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load node');

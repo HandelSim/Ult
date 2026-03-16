@@ -17,6 +17,9 @@ interface UseSSEOptions {
 /**
  * Subscribe to an SSE endpoint and receive typed events.
  * Automatically reconnects on connection loss (with backoff).
+ *
+ * Callbacks are stored in refs so that changing them never triggers a
+ * reconnect — only a URL change causes the connection to be replaced.
  */
 export function useSSE(url: string, options: UseSSEOptions = {}) {
   const {
@@ -32,6 +35,14 @@ export function useSSE(url: string, options: UseSSEOptions = {}) {
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isMounted = useRef(true);
 
+  // Keep latest callbacks in refs — updating them never triggers a reconnect
+  const onMessageRef = useRef(onMessage);
+  const onErrorRef = useRef(onError);
+  const onOpenRef = useRef(onOpen);
+  onMessageRef.current = onMessage;
+  onErrorRef.current = onError;
+  onOpenRef.current = onOpen;
+
   const connect = useCallback(() => {
     if (!isMounted.current || !url) return;
 
@@ -40,7 +51,7 @@ export function useSSE(url: string, options: UseSSEOptions = {}) {
 
     es.onopen = () => {
       reconnectCount.current = 0;
-      onOpen?.();
+      onOpenRef.current?.();
     };
 
     // Handle specific named events from the server
@@ -55,9 +66,9 @@ export function useSSE(url: string, options: UseSSEOptions = {}) {
       es.addEventListener(eventName, (e: MessageEvent) => {
         try {
           const data = JSON.parse(e.data);
-          onMessage?.(eventName, data);
+          onMessageRef.current?.(eventName, data);
         } catch {
-          onMessage?.(eventName, e.data);
+          onMessageRef.current?.(eventName, e.data);
         }
       });
     }
@@ -66,14 +77,14 @@ export function useSSE(url: string, options: UseSSEOptions = {}) {
     es.onmessage = (e: MessageEvent) => {
       try {
         const data = JSON.parse(e.data);
-        onMessage?.('message', data);
+        onMessageRef.current?.('message', data);
       } catch {
-        onMessage?.('message', e.data);
+        onMessageRef.current?.('message', e.data);
       }
     };
 
     es.onerror = (error) => {
-      onError?.(error);
+      onErrorRef.current?.(error);
       es.close();
 
       if (!isMounted.current) return;
@@ -84,7 +95,7 @@ export function useSSE(url: string, options: UseSSEOptions = {}) {
         reconnectTimer.current = setTimeout(connect, delay);
       }
     };
-  }, [url, onMessage, onError, onOpen, reconnectDelay, maxReconnects]);
+  }, [url, reconnectDelay, maxReconnects]); // callbacks excluded — handled via refs
 
   useEffect(() => {
     isMounted.current = true;

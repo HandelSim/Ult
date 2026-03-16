@@ -1,0 +1,155 @@
+{
+  "_comment": "Canonical registry of HAMMER agent capabilities. Loaded into the decomposition prompt so Claude generates grounded configs. Update this file when new tools/hooks/MCP servers are added.",
+  "version": "1.0.0",
+
+  "claude_code_tools": {
+    "_comment": "Valid values for the allowed_tools array on each node. Only list tools the node actually needs.",
+    "file_io": ["Read", "Write", "Edit"],
+    "search": ["Grep", "Glob"],
+    "shell": ["Bash"],
+    "agents": ["Agent"],
+    "web": ["WebFetch", "WebSearch"],
+    "tasks": ["TodoWrite", "TodoRead"],
+    "recommended_defaults": {
+      "leaf": ["Read", "Write", "Edit", "Bash", "Grep", "Glob"],
+      "test": ["Read", "Bash", "Grep", "Glob"],
+      "orchestrator": ["Read", "Bash", "Grep", "Glob", "Agent"]
+    }
+  },
+
+  "hook_templates": {
+    "_comment": "Named hook templates available via getDefaultHooks(). Leave hooks:{} to use type-based defaults (recommended). Reference template names here for documentation only — the server maps names to configs.",
+    "codeQuality": {
+      "description": "Auto-format code with prettier+eslint after every Write/Edit.",
+      "trigger": "PostToolUse: Write|Edit",
+      "use_when": "Leaf nodes writing production code (TypeScript, JavaScript, Python, etc.)"
+    },
+    "pathBoundary": {
+      "description": "Block writes outside the node's allowed_paths. Enforced via enforce_boundaries.py.",
+      "trigger": "PreToolUse: Write|Edit",
+      "use_when": "ALL leaf and test nodes — prevents cross-boundary file corruption"
+    },
+    "typeCheck": {
+      "description": "Run tsc --noEmit after code changes. Surfaces TypeScript errors immediately.",
+      "trigger": "PostToolUse: Write|Edit",
+      "use_when": "TypeScript-heavy nodes that benefit from incremental type feedback"
+    },
+    "testRunner": {
+      "description": "Run jest --passWithNoTests --bail after every edit. Fast feedback loop.",
+      "trigger": "PostToolUse: Write|Edit",
+      "use_when": "Test nodes and TDD-style leaf nodes"
+    },
+    "secretDetection": {
+      "description": "Scan for API keys, passwords, tokens before Write/Edit commits.",
+      "trigger": "PreToolUse: Write|Edit",
+      "use_when": "ALL leaf and test nodes — security guardrail"
+    },
+    "branchProtection": {
+      "description": "Block direct edits to main/master branch.",
+      "trigger": "PreToolUse: Write|Edit",
+      "use_when": "Nodes with git access that should never touch main"
+    },
+    "contractVerification": {
+      "description": "Run verify_contracts.py after edits — ensures interface contract compliance.",
+      "trigger": "PostToolUse: Write|Edit",
+      "use_when": "Leaf nodes that produce outputs consumed by sibling nodes"
+    },
+    "defaults_by_node_type": {
+      "_comment": "When hooks:{} is left empty, the server applies these defaults automatically.",
+      "leaf": ["pathBoundary", "codeQuality", "secretDetection", "contractVerification"],
+      "test": ["pathBoundary", "testRunner", "secretDetection"],
+      "orchestrator": []
+    }
+  },
+
+  "mcp_servers": {
+    "_comment": "MCP servers available for the mcp_tools array. Include the full config object in mcp_tools.",
+    "context7": {
+      "description": "Fetch live, version-specific library documentation from the internet. Agents append 'use context7' to their prompts to activate.",
+      "when_to_use": "Any node working with third-party libraries (npm packages, pip packages, etc.) that may have changed APIs.",
+      "cost": "~5000 tokens per fetch",
+      "config": {
+        "name": "context7",
+        "command": "npx",
+        "args": ["-y", "@upstash/context7-mcp@latest"]
+      }
+    },
+    "playwright": {
+      "description": "Full interactive Playwright browser control via MCP. High token cost (~13,700 baseline).",
+      "when_to_use": "Tier 3 integration-test nodes ONLY. Never for routine debugging. HAMMER auto-enables Chrome DevTools MCP for browser failures instead.",
+      "cost": "~13,700 tokens baseline",
+      "config": {
+        "name": "playwright",
+        "command": "npx",
+        "args": ["@playwright/mcp@latest"]
+      }
+    }
+  },
+
+  "browser_debugging_tools": {
+    "_comment": "CLI browser tools available via Bash. HAMMER's tiered approach — always start with cheapest.",
+    "tier1_default": {
+      "tool": "agent-browser",
+      "cost": "~200-400 tokens per snapshot",
+      "description": "Default browser tool. Page loads, clicks, form fills, screenshots, DOM inspection.",
+      "usage_examples": [
+        "agent-browser open http://localhost:3000",
+        "agent-browser snapshot -i",
+        "agent-browser click @e2",
+        "agent-browser fill @e3 'text'",
+        "agent-browser screenshot page.png"
+      ]
+    },
+    "tier1_fallback": {
+      "tool": "playwright-cli",
+      "cost": "~500-1000 tokens per snapshot",
+      "description": "CLI fallback when agent-browser insufficient. Supports network-idle wait, Firefox/WebKit.",
+      "usage_examples": [
+        "playwright-cli open http://localhost:3000",
+        "playwright-cli snapshot",
+        "playwright-cli screenshot"
+      ]
+    },
+    "tier2_auto": {
+      "tool": "chrome-devtools-mcp",
+      "cost": "~18,000 tokens baseline",
+      "description": "Auto-enabled by HAMMER on browser failures (CORS errors, blank pages, JS errors). Do NOT configure manually in node configs.",
+      "usage": "Automatic — HAMMER enables this when CLI tools fail"
+    }
+  },
+
+  "testing_tiers": {
+    "_comment": "Set testing_tier on test/integration nodes. Determines which testing infrastructure runs.",
+    "tier1": {
+      "label": "CLI Tests",
+      "description": "Lint (eslint), TypeScript type check (tsc), unit tests (jest). Zero agent tokens consumed. Runs synchronously.",
+      "playwright_mcp": false,
+      "requires_sibling_completion": false,
+      "token_cost_multiplier": 1,
+      "assign_when": "Default for ALL nodes. Pure code work, unit tests, no browser needed."
+    },
+    "tier2": {
+      "label": "Screenshot Verification",
+      "description": "Playwright CLI screenshot capture. Headless browser, no interactive tokens. Good for UI component validation.",
+      "playwright_mcp": false,
+      "requires_sibling_completion": false,
+      "token_cost_multiplier": 2,
+      "assign_when": "UI component nodes that need visual regression checking without full integration."
+    },
+    "tier3": {
+      "label": "Integration Testing",
+      "description": "Full Playwright MCP interactive browser testing. Runs AFTER all sibling nodes complete. Expensive but thorough.",
+      "playwright_mcp": true,
+      "requires_sibling_completion": true,
+      "token_cost_multiplier": 5,
+      "assign_when": "Integration-test nodes only (e.g. 'integration-tests', 'e2e-tests'). Never assign to feature nodes."
+    }
+  },
+
+  "model_selection": {
+    "_comment": "All decomposed nodes always use haiku. This is enforced server-side.",
+    "haiku": "claude-haiku-4-5-20251001 — all leaf/orchestrator/test nodes",
+    "sonnet": "DO NOT USE — reserved for SCHEMA orchestration layer only",
+    "opus": "DO NOT USE — reserved for kingdom-wide architectural decisions only"
+  }
+}

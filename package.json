@@ -12,7 +12,7 @@
     "dev:server": "npm run dev --workspace=src/server",
     "dev:client": "npm run dev --workspace=src/client",
     "build": "npm run build:server && npm run build:client",
-    "build:server": "cd src/server && npx tsc -p tsconfig.server.json && mkdir -p ../../dist/server/db && cp db/schema.sql ../../dist/server/db/schema.sql",
+    "build:server": "cd src/server && npx tsc -p tsconfig.server.json && mkdir -p ../../dist/server/db ../../dist/server/config && cp db/schema.sql ../../dist/server/db/schema.sql && cp config/hammer-capabilities.json ../../dist/server/config/hammer-capabilities.json",
     "build:client": "cd src/client && npx vite build",
     "start": "NODE_ENV=production node dist/server/index.js",
     "lint": "eslint 'src/**/*.{ts,tsx}' --fix",
@@ -24,7 +24,8 @@
     "test:e2e:decomposition": "npx playwright test tests/e2e/02-decomposition.spec.ts",
     "test:e2e:inspection": "npx playwright test tests/e2e/03-node-inspection.spec.ts",
     "test:e2e:approval": "npx playwright test tests/e2e/04-approval-flow.spec.ts",
-    "test:e2e:workflow": "npx playwright test tests/e2e/05-full-workflow.spec.ts"
+    "test:e2e:workflow": "npx playwright test tests/e2e/05-full-workflow.spec.ts",
+    "test:e2e:streaming": "npx playwright test tests/e2e/06-streaming-workflow.spec.ts"
   },
   "devDependencies": {
     "@playwright/test": "^1.58.2",

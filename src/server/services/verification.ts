@@ -9,13 +9,39 @@
  * 3. Validate against parent acceptance criteria
  * 4. Mark parent as completed or flag issues
  */
-import Anthropic from '@anthropic-ai/sdk';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import { getDb } from '../db';
 import { broadcastGlobal, broadcastToNode } from '../utils/sse';
 
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-});
+const execFileAsync = promisify(execFile);
+
+async function callClaudeCLI(prompt: string): Promise<string> {
+  const { spawn } = require('child_process') as typeof import('child_process');
+  return new Promise((resolve, reject) => {
+    const proc = spawn('claude', [
+      '-p',
+      '--output-format', 'text',
+      '--model', 'claude-haiku-4-5-20251001',
+      '--strict-mcp-config',
+    ], {
+      env: { ...process.env },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    let stdout = '';
+    let stderr = '';
+    proc.stdout.on('data', (d: Buffer) => { stdout += d.toString(); });
+    proc.stderr.on('data', (d: Buffer) => { stderr += d.toString(); });
+    proc.stdin.write(prompt);
+    proc.stdin.end();
+    proc.on('close', (code: number | null) => {
+      if (code !== 0) reject(new Error(`claude CLI exited ${code}: ${stderr.slice(0, 500)}`));
+      else resolve(stdout.trim());
+    });
+    proc.on('error', (e: Error) => reject(e));
+    setTimeout(() => { proc.kill(); reject(new Error('claude CLI timeout')); }, 60000);
+  });
+}
 
 interface NodeRow {
   id: string;
@@ -123,21 +149,11 @@ export async function verifyNode(nodeId: string): Promise<VerificationResult> {
   try {
     const prompt = buildVerificationPrompt(node, children, contracts);
 
-    // Use Claude Haiku for fast, cost-effective verification
-    const response = await anthropic.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 1024,
-      messages: [{ role: 'user', content: prompt }],
-    });
-
-    const textContent = response.content.find(c => c.type === 'text');
-    if (!textContent || textContent.type !== 'text') {
-      throw new Error('No text response from Claude API');
-    }
+    const rawText = await callClaudeCLI(prompt);
 
     let result: VerificationResult;
     try {
-      let cleaned = textContent.text.trim();
+      let cleaned = rawText.trim();
       if (cleaned.startsWith('```')) {
         cleaned = cleaned.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
       }

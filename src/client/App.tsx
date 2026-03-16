@@ -1,13 +1,14 @@
 /**
  * App - Main application shell with three-panel layout.
  */
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { useTree } from './hooks/useTree';
 import { useNode } from './hooks/useNode';
 import { TreeGraph } from './components/TreeGraph';
 import { NodeDetail } from './components/NodeDetail';
 import { ExecutionLog } from './components/ExecutionLog';
 import { StatusBadge } from './components/StatusBadge';
+import { StreamingTerminal } from './components/StreamingTerminal';
 import { Project, ProjectStatus, ContractProposal, Contract } from './types';
 
 // ============================================================
@@ -476,6 +477,11 @@ export default function App() {
   const [projectMode, setProjectMode] = useState<'manual' | 'auto'>('manual');
   // Tracks a node to auto-select once the new tree loads after project creation
   const [pendingNodeSelect, setPendingNodeSelect] = useState<string | null>(null);
+  // Streaming terminal state — shown immediately after project creation
+  const [streamingNodeId, setStreamingNodeId] = useState<string | null>(null);
+  const [streamingProjectName, setStreamingProjectName] = useState('');
+  // Ref to remember which root node to select after streaming completes
+  const streamingRootNodeRef = useRef<string | null>(null);
 
   const handleToggleMode = useCallback(async () => {
     if (!selectedProjectId) return;
@@ -529,15 +535,37 @@ export default function App() {
     const data = await response.json() as { project: Project; rootNode: { id: string } };
     setProjects(prev => [data.project, ...prev]);
     setSelectedProjectId(data.project.id);
-    // Queue root node for selection once the new tree has loaded
+
+    // Show streaming terminal for root node initialization
     if (data.rootNode?.id) {
-      setPendingNodeSelect(data.rootNode.id);
+      streamingRootNodeRef.current = data.rootNode.id;
+      setStreamingProjectName(name);
+      setStreamingNodeId(data.rootNode.id);
     }
   }, []);
+
+  /** Called when the streaming terminal completes or is dismissed. */
+  const handleStreamingComplete = useCallback(() => {
+    const nodeId = streamingRootNodeRef.current;
+    setStreamingNodeId(null);
+    if (nodeId) {
+      tree.setSelectedNodeId(nodeId);
+      setViewMode('detail');
+      tree.refreshTree(); // Re-fetch so the configured node data is current
+    }
+  }, [tree]);
 
   const handleSelectNode = useCallback((nodeId: string) => {
     tree.setSelectedNodeId(nodeId);
     setViewMode('detail');
+  }, [tree]);
+
+  /** Approve a node; if decomposing, switch to graph view to watch children appear. */
+  const handleApproveNode = useCallback(async (nodeId: string, decompose: boolean) => {
+    await tree.approveNode(nodeId, decompose);
+    if (decompose) {
+      setViewMode('graph');
+    }
   }, [tree]);
 
   // Improvement 2: handle lifecycle phase transitions
@@ -571,6 +599,15 @@ export default function App() {
         <CreateProjectModal
           onClose={() => setShowCreateModal(false)}
           onCreate={handleCreateProject}
+        />
+      )}
+
+      {/* Streaming terminal — shown immediately after project creation */}
+      {streamingNodeId && (
+        <StreamingTerminal
+          nodeId={streamingNodeId}
+          projectName={streamingProjectName}
+          onComplete={handleStreamingComplete}
         />
       )}
 
@@ -720,7 +757,7 @@ export default function App() {
                   node={selectedNode}
                   allNodes={tree.nodes}
                   contracts={tree.contracts}
-                  onApprove={tree.approveNode}
+                  onApprove={handleApproveNode}
                   onReject={tree.rejectNode}
                   onExecute={tree.executeNode}
                   onVerify={tree.verifyNode}

@@ -12,6 +12,17 @@ export type NodeStatus =
   | 'failed'
   | 'rejected';
 
+export type ProjectStatus =
+  | 'building'
+  | 'tree_approved'
+  | 'contexts_generating'
+  | 'contexts_generated'
+  | 'executing'
+  | 'completed'
+  | 'failed';
+
+export type TestingTier = 'tier1' | 'tier2' | 'tier3';
+
 export type NodeType = 'orchestrator' | 'leaf' | 'test';
 
 export type ModelType = 'sonnet' | 'haiku' | 'opus';
@@ -60,6 +71,14 @@ export interface TreeNode {
   max_iterations: number;
   escalation_policy: EscalationPolicy;
   model: ModelType;
+  // Improvement 1: testing tier
+  testing_tier: TestingTier;
+  // Improvement 3: API contracts
+  apis_provided: string[];
+  apis_consumed: string[];
+  // Improvement 6: integration verification
+  integration_status: string | null;
+  integration_results: string | null;
   started_at: string | null;
   completed_at: string | null;
   execution_log: string | null;
@@ -82,7 +101,23 @@ export interface Project {
   description: string | null;
   root_node_id: string | null;
   mode: 'manual' | 'auto';
+  // Improvement 2: lifecycle phases
+  status: ProjectStatus;
   created_at: string;
+}
+
+export interface ContractProposal {
+  id: string;
+  contract_id: string;
+  proposed_by: string | null;
+  old_content: string | null;
+  new_content: string;
+  change_type: 'backward_compatible' | 'breaking' | 'unknown';
+  status: 'pending' | 'approved' | 'rejected';
+  analysis: string | null;
+  reviewed_by: string | null;
+  created_at: string;
+  resolved_at: string | null;
 }
 
 export interface TreeData {

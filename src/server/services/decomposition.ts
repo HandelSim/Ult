@@ -4,11 +4,21 @@
  * into executable sub-agent configurations. Each decomposition produces
  * child nodes and interface contracts between them.
  */
-import Anthropic from '@anthropic-ai/sdk';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import { v4 as uuidv4 } from 'uuid';
+import * as fs from 'fs';
+import * as path from 'path';
+
+const execFileAsync = promisify(execFile);
 import { getDb } from '../db';
 import { broadcastGlobal, broadcastToNode } from '../utils/sse';
 import { getDefaultHooks } from '../utils/hooks-templates';
+
+/** Load the HAMMER capabilities manifest once at startup. */
+const CAPABILITIES = JSON.parse(
+  fs.readFileSync(path.join(__dirname, '../config/hammer-capabilities.json'), 'utf-8')
+);
 
 /**
  * Rate limiting for auto-mode recursive decomposition.
@@ -38,9 +48,33 @@ function releaseDecompositionSlot(): void {
   if (activeDecompositions > 0) activeDecompositions--;
 }
 
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-});
+/** Call Claude CLI and return full text output (non-streaming, for decomposition). */
+async function callClaudeCLI(prompt: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const proc = (require('child_process') as typeof import('child_process')).spawn('claude', [
+      '-p',
+      '--output-format', 'text',
+      '--model', 'claude-haiku-4-5-20251001',
+      '--strict-mcp-config',
+    ], {
+      env: { ...process.env },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+
+    let stdout = '';
+    let stderr = '';
+    proc.stdout.on('data', (d: Buffer) => { stdout += d.toString(); });
+    proc.stderr.on('data', (d: Buffer) => { stderr += d.toString(); });
+    proc.stdin.write(prompt);
+    proc.stdin.end();
+    proc.on('close', (code: number | null) => {
+      if (code !== 0) reject(new Error(`claude CLI exited ${code}: ${stderr.slice(0, 500)}`));
+      else resolve(stdout.trim());
+    });
+    proc.on('error', (e: Error) => reject(e));
+    setTimeout(() => { proc.kill(); reject(new Error('claude CLI timeout')); }, 120000);
+  });
+}
 
 interface ComponentConfig {
   prompt: string;
@@ -57,6 +91,7 @@ interface ComponentConfig {
   context_files?: string[];
   max_iterations?: number;
   escalation_policy?: 'ask_human' | 'auto_retry' | 'fail';
+  testing_tier?: 'tier1' | 'tier2' | 'tier3';
 }
 
 interface ContractConfig {
@@ -99,6 +134,8 @@ interface NodeRow {
 /**
  * Build the decomposition prompt that instructs Claude to analyze the parent
  * node and generate a set of child agent configurations.
+ * Injects the HAMMER capabilities manifest so Claude makes grounded choices
+ * instead of guessing what tools, hooks, and MCP servers are available.
  */
 function buildDecompositionPrompt(
   node: NodeRow,
@@ -109,56 +146,125 @@ function buildDecompositionPrompt(
     ? contracts.map(c => `### ${c.name}\n${c.content || '(empty)'}`).join('\n\n')
     : 'No contracts defined yet.';
 
-  return `You are a senior software architect performing recursive project decomposition.
+  const caps = CAPABILITIES;
 
-## Context
+  // Format allowed_tools guidance from the manifest
+  const toolsGuidance = [
+    `- leaf nodes: ${JSON.stringify(caps.claude_code_tools.recommended_defaults.leaf)}`,
+    `- test nodes: ${JSON.stringify(caps.claude_code_tools.recommended_defaults.test)}`,
+    `- orchestrator nodes: ${JSON.stringify(caps.claude_code_tools.recommended_defaults.orchestrator)}`,
+    `- Add "WebFetch" or "WebSearch" only if the node needs live internet access`,
+    `- Add "Agent" only if the node needs to spawn sub-agents`,
+  ].join('\n');
+
+  // Format hook templates from the manifest
+  const hooksGuidance = Object.entries(caps.hook_templates)
+    .filter(([key]) => key !== '_comment' && key !== 'defaults_by_node_type')
+    .map(([name, h]: [string, any]) => `  - "${name}": ${h.description} | Use when: ${h.use_when}`)
+    .join('\n');
+
+  // Format MCP servers from the manifest
+  const mcpGuidance = Object.entries(caps.mcp_servers)
+    .filter(([key]) => key !== '_comment')
+    .map(([name, s]: [string, any]) => `  - "${name}": ${s.description}\n    Cost: ${s.cost}\n    When: ${s.when_to_use}`)
+    .join('\n\n');
+
+  // Format testing tiers from the manifest
+  const tiersGuidance = Object.entries(caps.testing_tiers)
+    .filter(([key]) => key !== '_comment')
+    .map(([tier, t]: [string, any]) => `  - "${tier}" (${t.label}): ${t.description}\n    Assign when: ${t.assign_when}`)
+    .join('\n\n');
+
+  return `You are a senior software architect performing recursive project decomposition for SCHEMA, a multi-agent software development orchestrator.
+
+Each node you create becomes a HAMMER agent — a Claude Code instance with specific tool access, file path boundaries, hooks, and acceptance criteria. Your configs must be precise and grounded in what HAMMER actually supports.
+
+## Project Context
 - Project specification: ${projectSpec}
 - Parent node name: ${node.name}
 - Parent node prompt: ${node.prompt || '(none)'}
 - Parent node role: ${node.role || 'Software Engineer'}
 - Current depth: ${node.depth}
-- Sibling contracts:
+
+## Existing Contracts (shared interfaces between siblings)
 ${contractsContent}
 
-## Your Task
-Decompose this component into sub-components. For each, provide a complete Claude Code agent configuration.
+---
 
-## Rules
+## HAMMER CAPABILITIES — What You Can Configure
+
+### allowed_tools
+Only use tool names from this list. Recommended defaults by node type:
+${toolsGuidance}
+
+### hooks
+Leave hooks as {} to apply the correct default hooks for the node_type automatically.
+The server maps node types to these defaults:
+  - leaf: pathBoundary + codeQuality + secretDetection + contractVerification
+  - test: pathBoundary + testRunner + secretDetection
+  - orchestrator: (none — orchestrators don't write files)
+
+Available hook templates if you need custom overrides:
+${hooksGuidance}
+
+### mcp_tools
+Available MCP servers (include full config object if you want one enabled):
+
+${mcpGuidance}
+
+Include context7 for any node working with third-party libraries.
+Use the exact config object from the manifest — do not invent MCP server configs.
+
+### testing_tier
+Assign a testing tier to control what testing infrastructure runs:
+
+${tiersGuidance}
+
+### model
+ALWAYS use "haiku" — all agent nodes run claude-haiku-4-5-20251001. This is enforced server-side.
+
+---
+
+## Decomposition Rules
 1. Each sub-component should be a coherent unit of work (1-2 developer sessions max for leaves)
-2. Define explicit file path boundaries (allowed_paths) for each component
-3. Include a testing agent as a sibling at every level (suffix name with "-tests" or "-testing")
-4. Set is_leaf: true when task is small enough for one developer session
-5. Define acceptance_criteria clearly and measurably
-6. Include appropriate hooks based on the type of work
-7. Specify dependencies between siblings using their component names
-8. Include contracts for any shared interfaces between components
-9. Always use "haiku" for the model field — all decomposition tasks use claude-haiku-4-5-20251001
+2. Define explicit file path boundaries (allowed_paths) — keep them narrow and non-overlapping
+3. Include exactly one test/integration sibling at each level (suffix: "-tests" or "-testing")
+4. Set is_leaf: true when the task is small enough for one focused developer session
+5. Write acceptance_criteria as measurable, verifiable completion criteria (not vague goals)
+6. Leave hooks:{} unless you have a specific reason to override the node-type defaults
+7. List dependencies by component name — these control execution order
+8. Include contracts for any shared TypeScript interfaces, API specs, or data schemas
+9. Add context7 to mcp_tools for any node that will use third-party libraries
+10. Assign testing_tier: "tier3" ONLY to integration-test nodes that run after siblings complete
 
 ## Output Format
 Respond with ONLY valid JSON (no markdown code fencing, no explanation text):
 {
   "components": {
     "component-name": {
-      "prompt": "Detailed task description for this agent...",
+      "prompt": "Detailed task description — specific enough that a developer could execute it without asking questions",
       "role": "Senior Backend Engineer",
-      "is_leaf": false,
+      "is_leaf": true,
       "model": "haiku",
-      "system_prompt_additions": "Additional context specific to this component...",
+      "system_prompt_additions": "Additional context specific to this component (optional)",
       "hooks": {},
-      "mcp_tools": [],
+      "mcp_tools": [
+        { "name": "context7", "command": "npx", "args": ["-y", "@upstash/context7-mcp@latest"] }
+      ],
       "allowed_tools": ["Read", "Write", "Edit", "Bash", "Grep", "Glob"],
       "allowed_paths": ["src/component-name/"],
-      "dependencies": [],
-      "acceptance_criteria": "Measurable completion criteria...",
+      "dependencies": ["other-component-name"],
+      "acceptance_criteria": "All unit tests pass. TypeScript compiles with zero errors. ESLint reports zero warnings.",
       "context_files": [],
       "max_iterations": 10,
-      "escalation_policy": "ask_human"
+      "escalation_policy": "ask_human",
+      "testing_tier": "tier1"
     }
   },
   "contracts": {
     "contract-name": {
-      "description": "What this contract defines...",
-      "initial_content": "TypeScript interface or API spec content..."
+      "description": "What this contract defines and which components use it",
+      "initial_content": "// TypeScript interface or OpenAPI spec\nexport interface Foo { ... }"
     }
   }
 }`;
@@ -210,9 +316,6 @@ function parseDecompositionResponse(content: string): DecompositionResult {
  * prevent exponential request bursts during auto-mode tree expansion.
  */
 export async function decomposeNode(nodeId: string): Promise<void> {
-  if (!process.env.ANTHROPIC_API_KEY) {
-    throw new Error('ANTHROPIC_API_KEY is not set. Cannot run decomposition. Set this environment variable and restart the server.');
-  }
   const db = getDb();
 
   const node = db.prepare('SELECT * FROM nodes WHERE id = ?').get(nodeId) as NodeRow | undefined;
@@ -252,30 +355,24 @@ export async function decomposeNode(nodeId: string): Promise<void> {
   try {
     const prompt = buildDecompositionPrompt(node, siblingContracts, projectSpec);
 
-    broadcastToNode(nodeId, 'log', { message: 'Calling Claude API for decomposition...' });
+    broadcastToNode(nodeId, 'log', { message: 'Calling Claude for decomposition...' });
 
-    // Throttle concurrent API calls — wait for a free slot before proceeding
+    // Throttle concurrent calls
     await acquireDecompositionSlot();
-    let response;
+    let rawText: string;
     try {
-      // Use Claude Haiku for fast, cost-effective architectural decomposition
-      response = await anthropic.messages.create({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 8192,
-        messages: [{ role: 'user', content: prompt }],
-      });
+      rawText = await callClaudeCLI(prompt);
     } finally {
       releaseDecompositionSlot();
     }
 
-    const textContent = response.content.find(c => c.type === 'text');
-    if (!textContent || textContent.type !== 'text') {
-      throw new Error('No text response from Claude API');
+    if (!rawText.trim()) {
+      throw new Error('Claude CLI produced no output for decomposition');
     }
 
     broadcastToNode(nodeId, 'log', { message: 'Parsing decomposition result...' });
 
-    const result = parseDecompositionResponse(textContent.text);
+    const result = parseDecompositionResponse(rawText);
     const componentNames = Object.keys(result.components);
 
     broadcastToNode(nodeId, 'log', {
@@ -287,11 +384,13 @@ export async function decomposeNode(nodeId: string): Promise<void> {
       INSERT INTO nodes (
         id, parent_id, name, depth, status, node_type, prompt, role, system_prompt,
         hooks, mcp_tools, allowed_tools, allowed_paths, dependencies,
-        acceptance_criteria, context_files, max_iterations, escalation_policy, model
+        acceptance_criteria, context_files, max_iterations, escalation_policy, model,
+        testing_tier
       ) VALUES (
         ?, ?, ?, ?, 'pending', ?, ?, ?, ?,
         ?, ?, ?, ?, ?,
-        ?, ?, ?, ?, ?
+        ?, ?, ?, ?, ?,
+        ?
       )
     `);
 
@@ -315,6 +414,10 @@ export async function decomposeNode(nodeId: string): Promise<void> {
           ? comp.hooks
           : defaultHooks;
 
+        // Derive default testing_tier from node type if not specified
+        const testingTier = comp.testing_tier ||
+          (nodeType === 'test' ? 'tier1' : 'tier1');
+
         insertNode.run(
           childId,
           nodeId,
@@ -333,7 +436,8 @@ export async function decomposeNode(nodeId: string): Promise<void> {
           JSON.stringify(comp.context_files || []),
           comp.max_iterations || 10,
           comp.escalation_policy || 'ask_human',
-          comp.model || 'haiku'
+          comp.model || 'haiku',
+          testingTier
         );
 
         createdNodes.push({ id: childId, name: compName });

@@ -9,6 +9,7 @@ import { initSSE, broadcastGlobal } from '../utils/sse';
 import { decomposeNode } from '../services/decomposition';
 import { executeNode, cancelExecution } from '../services/execution';
 import { verifyNode } from '../services/verification';
+import { generateInitialNodeStream } from '../services/initial-node-generator';
 
 const router = Router();
 
@@ -28,6 +29,71 @@ router.get('/:id', (req: Request, res: Response) => {
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     res.status(500).json({ error: message });
+  }
+});
+
+/**
+ * GET /api/nodes/:id/init-stream
+ * SSE endpoint that streams Haiku's root-node configuration in real time.
+ * Emits: start | chunk | done | error
+ * Called immediately after project creation so the user sees live output.
+ */
+router.get('/:id/init-stream', async (req: Request, res: Response) => {
+  const nodeId = req.params['id'];
+  const db = getDb();
+
+  // SSE headers — must be set before any write
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders();
+
+  const send = (event: string, data: unknown) => {
+    if (!res.writableEnded) {
+      res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    }
+  };
+
+  const node = db.prepare('SELECT * FROM nodes WHERE id = ?').get(nodeId) as {
+    id: string; name: string; prompt: string | null;
+  } | undefined;
+
+  if (!node) {
+    send('error', { message: 'Node not found' });
+    res.end();
+    return;
+  }
+
+  // Find the project to get description
+  const project = db.prepare('SELECT * FROM projects WHERE root_node_id = ?').get(nodeId) as {
+    name: string; description: string | null;
+  } | undefined;
+
+  const projectName = project?.name || node.name;
+  const projectDescription = project?.description || node.name;
+
+  send('start', { message: `Haiku is generating the root node configuration for "${projectName}"…` });
+
+  try {
+    await generateInitialNodeStream(
+      nodeId,
+      projectName,
+      projectDescription,
+      (text: string) => send('chunk', { text })
+    );
+
+    // Broadcast the updated node to all SSE clients so the tree refreshes
+    const updatedNode = db.prepare('SELECT * FROM nodes WHERE id = ?').get(nodeId);
+    broadcastGlobal('node:updated', { node: updatedNode });
+
+    send('done', { node: updatedNode });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error('[init-stream] Error:', message);
+    send('error', { message });
+  } finally {
+    res.end();
   }
 });
 
