@@ -32,7 +32,7 @@ const DECOMPOSE_STAGGER_MS = 2000;
  * Maximum number of decompositions that may run concurrently across the
  * entire server process.  Prevents exponential fan-out in deep auto-mode trees.
  */
-const MAX_CONCURRENT_DECOMPOSITIONS = 3;
+const MAX_CONCURRENT_DECOMPOSITIONS = 4;
 
 let activeDecompositions = 0;
 
@@ -72,7 +72,7 @@ async function callClaudeCLI(prompt: string): Promise<string> {
       else resolve(stdout.trim());
     });
     proc.on('error', (e: Error) => reject(e));
-    setTimeout(() => { proc.kill(); reject(new Error('claude CLI timeout')); }, 120000);
+    setTimeout(() => { proc.kill(); reject(new Error('claude CLI timeout')); }, 300000);
   });
 }
 
@@ -175,6 +175,11 @@ function buildDecompositionPrompt(
     .map(([tier, t]: [string, any]) => `  - "${tier}" (${t.label}): ${t.description}\n    Assign when: ${t.assign_when}`)
     .join('\n\n');
 
+  const MAX_DEPTH = 2;
+  const depthNote = node.depth >= MAX_DEPTH - 1
+    ? `\n⚠️  DEPTH LIMIT: This node is at depth ${node.depth}. All children MUST be leaves (is_leaf: true). Do NOT create any orchestrator children — the tree must terminate here.`
+    : ``;
+
   return `You are a senior software architect performing recursive project decomposition for SCHEMA, a multi-agent software development orchestrator.
 
 Each node you create becomes a HAMMER agent — a Claude Code instance with specific tool access, file path boundaries, hooks, and acceptance criteria. Your configs must be precise and grounded in what HAMMER actually supports.
@@ -184,7 +189,7 @@ Each node you create becomes a HAMMER agent — a Claude Code instance with spec
 - Parent node name: ${node.name}
 - Parent node prompt: ${node.prompt || '(none)'}
 - Parent node role: ${node.role || 'Software Engineer'}
-- Current depth: ${node.depth}
+- Current depth: ${node.depth}${depthNote}
 
 ## Existing Contracts (shared interfaces between siblings)
 ${contractsContent}
@@ -275,10 +280,25 @@ Respond with ONLY valid JSON (no markdown code fencing, no explanation text):
  * Claude can sometimes wrap JSON in markdown fences despite instructions.
  */
 function parseDecompositionResponse(content: string): DecompositionResult {
-  // Strip markdown code fences if present
+  // Strip markdown code fences — handles both leading/trailing fences and
+  // cases where Claude wraps the JSON in a fence anywhere in the response.
   let cleaned = content.trim();
-  if (cleaned.startsWith('```')) {
-    cleaned = cleaned.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
+
+  // Try to extract JSON from a ```json ... ``` or ``` ... ``` block first
+  const fenceMatch = cleaned.match(/```(?:json)?\s*\n([\s\S]*?)\n\s*```/);
+  if (fenceMatch) {
+    cleaned = fenceMatch[1].trim();
+  } else if (cleaned.startsWith('```')) {
+    cleaned = cleaned.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '').trim();
+  }
+
+  // As a last resort, find the outermost { ... } in case there's surrounding text
+  if (!cleaned.startsWith('{')) {
+    const start = cleaned.indexOf('{');
+    const end = cleaned.lastIndexOf('}');
+    if (start !== -1 && end !== -1 && end > start) {
+      cleaned = cleaned.slice(start, end + 1);
+    }
   }
 
   const result = JSON.parse(cleaned) as DecompositionResult;
@@ -334,7 +354,13 @@ export async function decomposeNode(nodeId: string): Promise<void> {
     rootNode = parent;
   }
 
-  const projectSpec = rootNode.system_prompt || rootNode.prompt || 'Build the specified software system.';
+  // Truncate the project spec so decomposition prompts stay a manageable size.
+  // Very long specs cause slower Claude responses and excessive fan-out.
+  const MAX_SPEC_CHARS = 800;
+  const rawSpec = rootNode.system_prompt || rootNode.prompt || 'Build the specified software system.';
+  const projectSpec = rawSpec.length > MAX_SPEC_CHARS
+    ? rawSpec.slice(0, MAX_SPEC_CHARS) + '… (truncated for decomposition efficiency)'
+    : rawSpec;
 
   // Check project mode for auto-approve behaviour
   const projectRecord = db.prepare(
@@ -347,18 +373,19 @@ export async function decomposeNode(nodeId: string): Promise<void> {
     ? db.prepare('SELECT name, content FROM contracts WHERE parent_node_id = ?').all(node.parent_id) as Array<{ name: string; content: string | null }>
     : [];
 
-  // Mark node as decomposing
-  db.prepare(`UPDATE nodes SET status = 'decomposing' WHERE id = ?`).run(nodeId);
-  broadcastGlobal('node:status', { nodeId, status: 'decomposing' });
-  broadcastToNode(nodeId, 'log', { message: `Starting decomposition of "${node.name}"...` });
-
   try {
     const prompt = buildDecompositionPrompt(node, siblingContracts, projectSpec);
 
-    broadcastToNode(nodeId, 'log', { message: 'Calling Claude for decomposition...' });
-
-    // Throttle concurrent calls
+    // Throttle concurrent calls — acquire slot BEFORE marking decomposing so
+    // the DB status reflects nodes that are actually running (not queued).
     await acquireDecompositionSlot();
+
+    // Mark node as decomposing only after we've acquired the semaphore slot.
+    db.prepare(`UPDATE nodes SET status = 'decomposing' WHERE id = ?`).run(nodeId);
+    broadcastGlobal('node:status', { nodeId, status: 'decomposing' });
+    broadcastToNode(nodeId, 'log', { message: `Starting decomposition of "${node.name}"...` });
+
+    broadcastToNode(nodeId, 'log', { message: 'Calling Claude for decomposition...' });
     let rawText: string;
     try {
       rawText = await callClaudeCLI(prompt);
@@ -476,22 +503,34 @@ export async function decomposeNode(nodeId: string): Promise<void> {
     // In auto mode: approve all children and recursively decompose non-leaf ones.
     // Stagger launches by DECOMPOSE_STAGGER_MS per child to avoid bursting the
     // Claude API with simultaneous requests.
+    // Hard depth limit: nodes at MAX_DEPTH or below are converted to leaves to
+    // prevent runaway infinite tree expansion.
+    const MAX_AUTO_DECOMPOSE_DEPTH = 2;
     if (isAutoMode) {
       broadcastToNode(nodeId, 'log', { message: 'Auto mode: approving all child nodes...' });
       let staggerIndex = 0;
       for (const child of createdNodes) {
         db.prepare(`UPDATE nodes SET status = 'approved' WHERE id = ?`).run(child.id);
         broadcastGlobal('node:status', { nodeId: child.id, status: 'approved' });
-        const childNode = db.prepare('SELECT node_type FROM nodes WHERE id = ?').get(child.id) as { node_type: string } | undefined;
+        const childNode = db.prepare('SELECT node_type, depth FROM nodes WHERE id = ?').get(child.id) as { node_type: string; depth: number } | undefined;
         if (childNode && childNode.node_type !== 'leaf') {
-          // Stagger each non-leaf child decomposition to avoid concurrent API burst
-          const launchDelay = staggerIndex * DECOMPOSE_STAGGER_MS;
-          staggerIndex++;
-          setTimeout(() => {
-            decomposeNode(child.id).catch(err =>
-              console.error(`[auto-mode] Decompose failed for ${child.id}:`, err)
-            );
-          }, launchDelay);
+          if (childNode.depth >= MAX_AUTO_DECOMPOSE_DEPTH) {
+            // Force-convert to leaf: tree has reached its depth limit
+            db.prepare(`UPDATE nodes SET node_type = 'leaf' WHERE id = ?`).run(child.id);
+            broadcastGlobal('node:updated', { nodeId: child.id, node_type: 'leaf' });
+            broadcastToNode(nodeId, 'log', {
+              message: `[depth-limit] "${child.name}" capped as leaf at depth ${childNode.depth}`
+            });
+          } else {
+            // Stagger each non-leaf child decomposition to avoid concurrent API burst
+            const launchDelay = staggerIndex * DECOMPOSE_STAGGER_MS;
+            staggerIndex++;
+            setTimeout(() => {
+              decomposeNode(child.id).catch(err =>
+                console.error(`[auto-mode] Decompose failed for ${child.id}:`, err)
+              );
+            }, launchDelay);
+          }
         }
       }
     }
