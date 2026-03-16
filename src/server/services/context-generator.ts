@@ -118,7 +118,7 @@ export function generateSettings(nodeId: string): Record<string, unknown> {
 function resolveModelId(model: string): string {
   const map: Record<string, string> = {
     sonnet: 'claude-sonnet-4-6',
-    haiku: 'claude-haiku-4-5',
+    haiku: 'claude-haiku-4-5-20251001',
     opus: 'claude-opus-4-6',
   };
   return map[model] || 'claude-sonnet-4-6';

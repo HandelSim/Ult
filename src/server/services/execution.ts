@@ -50,7 +50,7 @@ interface NodeRow {
 function resolveModelId(model: string): string {
   const modelMap: Record<string, string> = {
     'sonnet': 'claude-sonnet-4-6',
-    'haiku': 'claude-haiku-4-5',
+    'haiku': 'claude-haiku-4-5-20251001',
     'opus': 'claude-opus-4-6',
   };
   return modelMap[model] || 'claude-sonnet-4-6';
@@ -204,7 +204,7 @@ export async function executeNode(nodeId: string): Promise<void> {
     // Log cost
     appendLog(nodeId, `Cost: $${result.cost.estimatedUsd.toFixed(4)} (${result.cost.inputTokens} in / ${result.cost.outputTokens} out tokens)`);
 
-    if (result.status === 'success' || result.status === 'completed') {
+    if (result.status === 'success') {
       db.prepare(`UPDATE nodes SET status = 'completed', completed_at = CURRENT_TIMESTAMP WHERE id = ?`).run(nodeId);
       broadcastGlobal('node:status', { nodeId, status: 'completed' });
       broadcastToNode(nodeId, 'log:complete', {

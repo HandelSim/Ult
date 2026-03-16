@@ -43,7 +43,7 @@ Respond with ONLY valid JSON, no markdown fences, no explanation:
   "prompt": "...",
   "role": "...",
   "is_leaf": false,
-  "model": "sonnet",
+  "model": "haiku",
   "acceptance_criteria": "...",
   "allowed_tools": ["Read", "Write", "Edit", "Bash", "Grep", "Glob"],
   "max_iterations": 10,
@@ -51,7 +51,7 @@ Respond with ONLY valid JSON, no markdown fences, no explanation:
 }`;
 
   const response = await anthropic.messages.create({
-    model: 'claude-sonnet-4-5',
+    model: 'claude-haiku-4-5-20251001',
     max_tokens: 2048,
     messages: [{ role: 'user', content: promptText }],
   });
@@ -70,7 +70,7 @@ Respond with ONLY valid JSON, no markdown fences, no explanation:
 
   // Enforce root node invariants
   config.is_leaf = false;
-  config.model = (['sonnet', 'haiku', 'opus'] as const).includes(config.model) ? config.model : 'sonnet';
+  config.model = (['sonnet', 'haiku', 'opus'] as const).includes(config.model) ? config.model : 'haiku';
   config.escalation_policy = (['ask_human', 'auto_retry', 'fail'] as const).includes(config.escalation_policy)
     ? config.escalation_policy : 'ask_human';
   config.max_iterations = typeof config.max_iterations === 'number' ? config.max_iterations : 10;

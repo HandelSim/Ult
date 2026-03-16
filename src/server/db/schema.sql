@@ -28,7 +28,7 @@ CREATE TABLE IF NOT EXISTS nodes (
   context_files JSON DEFAULT '[]',
   max_iterations INTEGER DEFAULT 10,
   escalation_policy TEXT DEFAULT 'ask_human' CHECK(escalation_policy IN ('ask_human','auto_retry','fail')),
-  model TEXT DEFAULT 'sonnet' CHECK(model IN ('sonnet','haiku','opus')),
+  model TEXT DEFAULT 'haiku' CHECK(model IN ('sonnet','haiku','opus')),
   -- Execution tracking
   started_at DATETIME,
   completed_at DATETIME,

@@ -1,6 +1,6 @@
 /**
  * Decomposition Service
- * Uses Claude Sonnet 4 to recursively break down high-level project specs
+ * Uses Claude Haiku to recursively break down high-level project specs
  * into executable sub-agent configurations. Each decomposition produces
  * child nodes and interface contracts between them.
  */
@@ -132,7 +132,7 @@ Decompose this component into sub-components. For each, provide a complete Claud
 6. Include appropriate hooks based on the type of work
 7. Specify dependencies between siblings using their component names
 8. Include contracts for any shared interfaces between components
-9. The model field should reflect complexity: use "sonnet" for complex tasks, "haiku" for simple/test tasks
+9. Always use "haiku" for the model field — all decomposition tasks use claude-haiku-4-5-20251001
 
 ## Output Format
 Respond with ONLY valid JSON (no markdown code fencing, no explanation text):
@@ -142,7 +142,7 @@ Respond with ONLY valid JSON (no markdown code fencing, no explanation text):
       "prompt": "Detailed task description for this agent...",
       "role": "Senior Backend Engineer",
       "is_leaf": false,
-      "model": "sonnet",
+      "model": "haiku",
       "system_prompt_additions": "Additional context specific to this component...",
       "hooks": {},
       "mcp_tools": [],
@@ -190,7 +190,7 @@ function parseDecompositionResponse(content: string): DecompositionResult {
     comp.context_files = comp.context_files || [];
     comp.max_iterations = comp.max_iterations || 10;
     comp.escalation_policy = comp.escalation_policy || 'ask_human';
-    comp.model = comp.model || 'sonnet';
+    comp.model = comp.model || 'haiku';
 
     // Auto-set node type based on name convention and is_leaf flag
     if (name.includes('test') || name.includes('testing')) {
@@ -258,9 +258,9 @@ export async function decomposeNode(nodeId: string): Promise<void> {
     await acquireDecompositionSlot();
     let response;
     try {
-      // Use Claude Sonnet 4 for high-quality architectural decomposition
+      // Use Claude Haiku for fast, cost-effective architectural decomposition
       response = await anthropic.messages.create({
-        model: 'claude-sonnet-4-5',
+        model: 'claude-haiku-4-5-20251001',
         max_tokens: 8192,
         messages: [{ role: 'user', content: prompt }],
       });
@@ -333,7 +333,7 @@ export async function decomposeNode(nodeId: string): Promise<void> {
           JSON.stringify(comp.context_files || []),
           comp.max_iterations || 10,
           comp.escalation_policy || 'ask_human',
-          comp.model || 'sonnet'
+          comp.model || 'haiku'
         );
 
         createdNodes.push({ id: childId, name: compName });

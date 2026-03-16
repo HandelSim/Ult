@@ -132,7 +132,7 @@ router.post('/', (req: Request, res: Response) => {
     db.prepare(`
       INSERT INTO nodes (id, parent_id, name, depth, status, node_type, prompt, role, model)
       VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?)
-    `).run(nodeId, parent_id || null, name.trim(), depth, node_type || 'leaf', prompt || null, role || null, model || 'sonnet');
+    `).run(nodeId, parent_id || null, name.trim(), depth, node_type || 'leaf', prompt || null, role || null, model || 'haiku');
 
     const node = db.prepare('SELECT * FROM nodes WHERE id = ?').get(nodeId);
     broadcastGlobal('node:created', { node });
