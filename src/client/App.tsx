@@ -160,6 +160,9 @@ export default function App() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [centerTab, setCenterTab] = useState<CenterTab>('tree');
   const [rightTab, setRightTab] = useState<RightTab>('blacksmith');
+  const [generatedFiles, setGeneratedFiles] = useState<string[]>([]);
+  const [autoMode, setAutoMode] = useState(false);
+  const [generatingContexts, setGeneratingContexts] = useState(false);
 
   // Load projects on mount
   useEffect(() => {
@@ -176,6 +179,13 @@ export default function App() {
 
   const tree = useTree(selectedProjectId);
   const { node: selectedNode, logs: nodeLogs, clearLogs } = useNode(tree.selectedNodeId);
+
+  // Sync auto_mode from project data
+  useEffect(() => {
+    if (tree.project) {
+      setAutoMode(tree.project.auto_mode ?? false);
+    }
+  }, [tree.project]);
 
   const handleSelectNode = useCallback((nodeId: string) => {
     tree.setSelectedNodeId(nodeId);
@@ -207,7 +217,44 @@ export default function App() {
     setSelectedProjectId(id);
     tree.setSelectedNodeId(null);
     setCenterTab('tree');
+    setGeneratedFiles([]);
   }, [tree]);
+
+  const handleGenerateContexts = useCallback(async () => {
+    setGeneratingContexts(true);
+    try {
+      const result = await tree.generateContexts();
+      setGeneratedFiles(result.generatedFiles);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to generate contexts');
+    } finally {
+      setGeneratingContexts(false);
+    }
+  }, [tree]);
+
+  const handleStartExecution = useCallback(async () => {
+    try {
+      await tree.startExecution();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to start execution');
+    }
+  }, [tree]);
+
+  const handleToggleAutoMode = useCallback(async () => {
+    if (!selectedProjectId) return;
+    const newValue = !autoMode;
+    setAutoMode(newValue);
+    // Persist to project
+    try {
+      await fetch(`/api/projects/${selectedProjectId}/auto-mode`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ auto_mode: newValue }),
+      });
+    } catch {
+      // Non-critical, just track locally
+    }
+  }, [selectedProjectId, autoMode]);
 
   const allLogs = [
     ...tree.logs,
@@ -287,6 +334,38 @@ export default function App() {
               <span className="text-xs text-gray-500">
                 {tree.nodes.length} nodes · {tree.nodes.filter(n => n.status === 'completed').length} done
               </span>
+              {/* Auto-mode toggle */}
+              <label className="flex items-center gap-1 cursor-pointer" title="Auto Mode: automatically execute after context generation">
+                <input
+                  type="checkbox"
+                  checked={autoMode}
+                  onChange={handleToggleAutoMode}
+                  data-testid="auto-mode-toggle"
+                  className="w-3 h-3 accent-blue-500"
+                />
+                <span className="text-xs text-gray-400">Auto</span>
+              </label>
+              {/* Generate Contexts button */}
+              {(tree.project.status === 'building' || tree.project.status === 'tree_approved') && tree.nodes.length > 0 && (
+                <button
+                  onClick={handleGenerateContexts}
+                  disabled={generatingContexts}
+                  data-testid="generate-contexts-button"
+                  className="text-xs px-2 py-1 rounded bg-purple-700 text-white hover:bg-purple-600 disabled:opacity-50"
+                >
+                  {generatingContexts ? 'Generating...' : 'Generate Agent Contexts'}
+                </button>
+              )}
+              {/* Start Execution button */}
+              {tree.project.status === 'contexts_generated' && (
+                <button
+                  onClick={handleStartExecution}
+                  data-testid="start-execution-button"
+                  className="text-xs px-2 py-1 rounded bg-green-700 text-white hover:bg-green-600"
+                >
+                  Start Execution
+                </button>
+              )}
               <button
                 onClick={tree.refreshTree}
                 className="text-xs px-2 py-1 rounded border border-gray-700 text-gray-400 hover:bg-gray-800"
@@ -329,17 +408,43 @@ export default function App() {
               </div>
             </div>
           ) : centerTab === 'tree' ? (
-            <div className="h-full">
-              <TreeGraph
-                nodes={tree.nodes}
-                selectedNodeId={tree.selectedNodeId}
-                onSelectNode={handleSelectNode}
-              />
-              {tree.nodes.length === 0 && !tree.loading && (
-                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                  <div className="text-center">
-                    <p className="text-sm text-gray-500">No nodes yet. Use Blacksmith to design your project.</p>
+            <div className="h-full flex flex-col">
+              <div className="flex-1 min-h-0 relative">
+                <TreeGraph
+                  nodes={tree.nodes}
+                  selectedNodeId={tree.selectedNodeId}
+                  onSelectNode={handleSelectNode}
+                />
+                {tree.nodes.length === 0 && !tree.loading && (
+                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                    <div className="text-center">
+                      <p className="text-sm text-gray-500">No nodes yet. Use Blacksmith to design your project.</p>
+                    </div>
                   </div>
+                )}
+              </div>
+              {/* Review Contexts Panel - shown when contexts have been generated */}
+              {(generatedFiles.length > 0 || tree.project?.status === 'contexts_generated') && (
+                <div
+                  data-testid="review-contexts-panel"
+                  className="border-t border-gray-700 bg-gray-900 p-3 max-h-40 overflow-y-auto flex-shrink-0"
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-semibold text-purple-400">Agent Context Files</span>
+                    <span className="text-xs text-gray-500">{generatedFiles.length} files generated</span>
+                  </div>
+                  {generatedFiles.length > 0 && (
+                    <ul data-testid="context-file-tree" className="space-y-0.5">
+                      {generatedFiles.map((filePath, idx) => (
+                        <li key={idx} className="text-xs text-gray-400 font-mono truncate" title={filePath}>
+                          {filePath}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {generatedFiles.length === 0 && tree.project?.status === 'contexts_generated' && (
+                    <p className="text-xs text-gray-500">Contexts previously generated. Refresh to see files.</p>
+                  )}
                 </div>
               )}
             </div>

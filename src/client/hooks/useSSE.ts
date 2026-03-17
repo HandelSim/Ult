@@ -58,8 +58,10 @@ export function useSSE(url: string, options: UseSSEOptions = {}) {
     const namedEvents = [
       'connected', 'node:status', 'node:created', 'node:updated', 'node:deleted',
       'log:output', 'log:error', 'log:complete', 'log:history',
-      'verification', 'project:created', 'project:deleted',
+      'verification', 'project:created', 'project:updated', 'project:deleted', 'project:status',
       'contract:created', 'contract:updated', 'contract:deleted',
+      'blacksmith:status', 'blacksmith:text', 'blacksmith:tool_use', 'blacksmith:done',
+      'blacksmith:error', 'blacksmith:decomposed', 'blacksmith:mockup',
     ];
 
     for (const eventName of namedEvents) {

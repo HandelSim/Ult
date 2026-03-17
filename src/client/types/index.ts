@@ -104,6 +104,7 @@ export interface ProjectFile {
     name: string;
     prompt: string;
     status: ProjectStatus;
+    auto_mode: boolean;
     created_at: string;
     updated_at: string;
   };
@@ -117,6 +118,7 @@ export interface Project {
   name: string;
   prompt: string;
   status: ProjectStatus;
+  auto_mode: boolean;
   created_at: string;
   updated_at: string;
 }

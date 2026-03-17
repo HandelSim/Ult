@@ -16,12 +16,12 @@ test.describe("Non-Root Decomposition", () => {
     await page.fill("[data-testid='project-name-input']", "Non-Root Decomp Project");
     await page.fill("[data-testid='project-prompt-input']", "Mobile app for fitness tracking");
     await page.click("[data-testid='create-project-submit']");
-    await page.locator("[data-testid='project-list-item']").filter({ hasText: "Non-Root Decomp Project" }).waitFor({ timeout: 10000 });
-    await page.locator("[data-testid='project-list-item']").filter({ hasText: "Non-Root Decomp Project" }).click();
+    await page.locator("[data-testid='project-list-item']").filter({ hasText: "Non-Root Decomp Project"  }).first().waitFor({ timeout: 10000 });
+    await page.locator("[data-testid='project-list-item']").filter({ hasText: "Non-Root Decomp Project"  }).first().click();
     await page.waitForSelector("[data-testid='blacksmith-status'][data-status='idle']", { timeout: 120000 });
 
     // Get project ID
-    const projectItem = page.locator("[data-testid='project-list-item']").filter({ hasText: "Non-Root Decomp Project" });
+    const projectItem = page.locator("[data-testid='project-list-item']").filter({ hasText: "Non-Root Decomp Project" }).first();
     const projectId = await projectItem.getAttribute("data-project-id");
 
     if (projectId) {

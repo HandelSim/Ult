@@ -13,6 +13,7 @@ import {
   updateProjectFile,
   readMockup,
 } from '../services/project-store';
+import { generateContexts } from '../services/context-generator';
 import { broadcastGlobal } from '../utils/sse';
 
 const router = Router();
@@ -198,23 +199,32 @@ router.post('/:id/nodes/:nodeId/approve', async (req: Request, res: Response) =>
 
 /**
  * POST /api/projects/:id/generate-contexts
- * Generate CLAUDE.md, settings.json, and contracts for all nodes.
+ * Generate CLAUDE.md, settings.json, and .hammer-config.json for all leaf nodes.
  */
 router.post('/:id/generate-contexts', async (req: Request, res: Response) => {
   try {
-    const data = getProject(req.params['id']);
+    const projectId = req.params['id'];
 
-    await updateProjectFile(req.params['id'], (d) => {
+    // Run context generation
+    const result = await generateContexts(projectId);
+
+    // Update project status
+    await updateProjectFile(projectId, (d) => {
       d.project.status = 'contexts_generated';
       return d;
     });
 
     broadcastGlobal('project:status', {
-      projectId: req.params['id'],
+      projectId,
       status: 'contexts_generated',
     });
 
-    res.json({ message: 'Contexts generated', status: 'contexts_generated', project: data.project });
+    res.json({
+      message: 'Contexts generated',
+      status: 'contexts_generated',
+      generatedFiles: result.generatedFiles.map(f => f.path),
+      leafNodes: result.leafNodes,
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     res.status(500).json({ error: message });
@@ -291,6 +301,24 @@ router.get('/:id/mockup', (req: Request, res: Response) => {
     }
     res.setHeader('Content-Type', 'text/html');
     res.send(content);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    res.status(500).json({ error: message });
+  }
+});
+
+/**
+ * POST /api/projects/:id/auto-mode
+ * Toggle auto_mode on a project.
+ */
+router.post('/:id/auto-mode', async (req: Request, res: Response) => {
+  try {
+    const { auto_mode } = req.body as { auto_mode: boolean };
+    const updated = await updateProjectFile(req.params['id'], (d) => {
+      d.project.auto_mode = typeof auto_mode === 'boolean' ? auto_mode : false;
+      return d;
+    });
+    res.json({ auto_mode: updated.project.auto_mode });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     res.status(500).json({ error: message });

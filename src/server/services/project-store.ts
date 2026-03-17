@@ -82,6 +82,7 @@ export interface ProjectData {
   name: string;
   prompt: string;
   status: 'building' | 'tree_approved' | 'contexts_generated' | 'executing' | 'completed';
+  auto_mode: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -112,6 +113,7 @@ function defaultProjectFile(projectId: string, name: string, prompt: string): Pr
       name,
       prompt,
       status: 'building',
+      auto_mode: false,
       created_at: now,
       updated_at: now,
     },

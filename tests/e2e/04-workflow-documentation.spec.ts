@@ -15,8 +15,8 @@ test.describe("Workflow Documentation", () => {
     await page.fill("[data-testid='project-name-input']", "Workflow Doc Project");
     await page.fill("[data-testid='project-prompt-input']", "E-commerce checkout flow");
     await page.click("[data-testid='create-project-submit']");
-    await page.locator("[data-testid='project-list-item']").filter({ hasText: "Workflow Doc Project" }).waitFor({ timeout: 10000 });
-    await page.locator("[data-testid='project-list-item']").filter({ hasText: "Workflow Doc Project" }).click();
+    await page.locator("[data-testid='project-list-item']").filter({ hasText: "Workflow Doc Project"  }).first().waitFor({ timeout: 10000 });
+    await page.locator("[data-testid='project-list-item']").filter({ hasText: "Workflow Doc Project"  }).first().click();
     await page.waitForSelector("[data-testid='blacksmith-status'][data-status='idle']", { timeout: 120000 });
 
     // Request workflow documentation
@@ -26,7 +26,7 @@ test.describe("Workflow Documentation", () => {
     );
 
     // Get project ID
-    const projectItem = page.locator("[data-testid='project-list-item']").filter({ hasText: "Workflow Doc Project" });
+    const projectItem = page.locator("[data-testid='project-list-item']").filter({ hasText: "Workflow Doc Project" }).first();
     const projectId = await projectItem.getAttribute("data-project-id");
 
     if (projectId) {

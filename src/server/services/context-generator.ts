@@ -1,172 +1,252 @@
 /**
- * Context Generator
- * Generates the CLAUDE.md hierarchy and settings files for a project's agent workspaces.
- *
- * Improvement 5: CLAUDE.md Hierarchy
- * - generateProjectClaude(): root-level project context
- * - generateNodeClaude(): per-node context (inherits ancestor chain)
- * - generateSettings(): per-node Claude Code settings.json
- *
- * Files are written under /tmp/ato-contexts/{projectId}/ so each agent
- * has a ready-made workspace when execution starts.
+ * Context Generator Service
+ * Generates agent context files for each leaf node in a project tree.
+ * For each leaf node, creates:
+ *   {project-dir}/{node-slug}/CLAUDE.md
+ *   {project-dir}/{node-slug}/.claude/settings.json
+ *   {project-dir}/{node-slug}/.hammer-config.json
+ * Also generates:
+ *   {project-dir}/tests/e2e/workflows.spec.ts
  */
-import { mkdirSync, writeFileSync } from 'fs';
-import { join } from 'path';
-import { getDb } from '../db';
-import { generateClaudeMd, generateRootClaudeMd } from './claude-md';
-import { getTierConfig } from '../config/testing-tiers';
-import { storeHammerConfig } from './execution';
+import * as fs from 'fs';
+import * as path from 'path';
+import {
+  getProjectDir,
+  readProjectFile,
+  NodeRecord,
+  ContractRecord,
+  WorkflowRecord,
+  ProjectFile,
+} from './project-store';
 
-interface NodeRow {
-  id: string;
-  parent_id: string | null;
-  name: string;
-  depth: number;
-  node_type: string;
-  model: string;
-  allowed_tools: string | null;
-  mcp_tools: string | null;
-  testing_tier: string | null;
-}
+// ─── Helpers ────────────────────────────────────────────────────────────────
 
-interface ProjectRow {
-  id: string;
-  name: string;
-  root_node_id: string | null;
+/**
+ * Convert a node name to a slug: lowercase, spaces to hyphens, non-alphanumeric removed.
+ */
+export function nodeNameToSlug(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/\s+/g, '-')
+    .replace(/[^a-z0-9-]/g, '');
 }
 
 /**
- * Get all nodes in a project tree (recursive CTE).
+ * Find a contract record by name.
  */
-function getProjectNodes(projectId: string): NodeRow[] {
-  const db = getDb();
-  const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId) as ProjectRow | undefined;
-  if (!project?.root_node_id) return [];
-
-  return db.prepare(`
-    WITH RECURSIVE tree(id) AS (
-      SELECT ?
-      UNION ALL
-      SELECT nodes.id FROM nodes JOIN tree ON nodes.parent_id = tree.id
-    )
-    SELECT * FROM nodes WHERE id IN (SELECT id FROM tree)
-    ORDER BY depth, created_at
-  `).all(project.root_node_id) as NodeRow[];
+function findContract(contracts: ContractRecord[], name: string): ContractRecord | undefined {
+  return contracts.find(c => c.name === name);
 }
 
-/**
- * Generate the project-level CLAUDE.md.
- * Written to: {contextRoot}/{projectId}/CLAUDE.md
- */
-export function generateProjectClaude(projectId: string): string {
-  return generateRootClaudeMd(projectId);
+// ─── File Generators ─────────────────────────────────────────────────────────
+
+function generateClaudeMdContent(
+  node: NodeRecord,
+  projectData: ProjectFile,
+  contracts: ContractRecord[]
+): string {
+  const { project, nodes, stakeholder } = projectData;
+
+  // Build stakeholder requirements section
+  const clarificationLines = stakeholder.clarifications.map(
+    c => `- **Q:** ${c.question}\n  **A:** ${c.answer}`
+  );
+  const decisionLines = stakeholder.decisions.map(
+    d => `- **${d.topic}:** ${d.decision} (${d.reasoning})`
+  );
+  const stakeholderSection = [
+    ...(clarificationLines.length > 0 ? ['### Clarifications', ...clarificationLines] : []),
+    ...(decisionLines.length > 0 ? ['### Decisions', ...decisionLines] : []),
+  ].join('\n') || 'No stakeholder data recorded yet.';
+
+  // Build contracts provided section
+  const contractsProvidedSection = node.contracts_provided.length > 0
+    ? node.contracts_provided.map(name => {
+        const contract = findContract(contracts, name);
+        if (!contract) return `### ${name}\n(Contract definition not found)`;
+        return `### ${name}\n\`\`\`${contract.type}\n${contract.content}\n\`\`\``;
+      }).join('\n\n')
+    : 'None';
+
+  // Build contracts consumed section
+  const contractsConsumedSection = node.contracts_consumed.length > 0
+    ? node.contracts_consumed.map(name => {
+        const contract = findContract(contracts, name);
+        if (!contract) return `### ${name}\n(Contract definition not found)`;
+        return `### ${name}\n\`\`\`${contract.type}\n${contract.content}\n\`\`\``;
+      }).join('\n\n')
+    : 'None';
+
+  // Build sibling nodes section
+  const siblingNodes = nodes.filter(n => n.id !== node.id && n.parent_id === node.parent_id);
+  const siblingSection = siblingNodes.length > 0
+    ? siblingNodes.map(n => `- **${n.name}**: ${n.prompt.split('\n')[0].slice(0, 100)}`).join('\n')
+    : 'No sibling nodes.';
+
+  return `# ${node.name}
+
+## Your Task
+${node.prompt}
+
+This folder is your workspace. Build everything needed for this component here.
+
+## Project Context
+${project.prompt}
+
+## Stakeholder Requirements
+${stakeholderSection}
+
+## API Contracts
+### Contracts You Implement
+${contractsProvidedSection}
+
+### Contracts You Consume
+${contractsConsumedSection}
+
+## Sibling Nodes
+${siblingSection}
+
+## Acceptance Criteria
+${node.acceptance_criteria || 'No acceptance criteria specified.'}
+`;
 }
 
-/**
- * Generate a node-specific CLAUDE.md that inherits the full ancestor chain.
- * Written to: {contextRoot}/{projectId}/nodes/{nodeId}/CLAUDE.md
- */
-export function generateNodeClaude(nodeId: string): string {
-  return generateClaudeMd(nodeId);
-}
-
-/**
- * Generate Claude Code settings.json for a node's workspace.
- * Configures model, tools, MCP servers, and testing hooks based on testing tier.
- */
-export function generateSettings(nodeId: string): Record<string, unknown> {
-  const db = getDb();
-  const node = db.prepare('SELECT * FROM nodes WHERE id = ?').get(nodeId) as NodeRow | undefined;
-  if (!node) throw new Error(`Node ${nodeId} not found`);
-
-  const tierConfig = getTierConfig(node.testing_tier);
-  const allowedTools: string[] = node.allowed_tools ? JSON.parse(node.allowed_tools) : ['Read', 'Write', 'Edit', 'Bash', 'Grep', 'Glob'];
-  const mcpTools: Array<{ name: string; command: string; args?: string[]; env?: Record<string, string> }> = node.mcp_tools ? JSON.parse(node.mcp_tools) : [];
-
-  // Add Playwright MCP only for Tier 3
-  const effectiveMcpTools = [...mcpTools];
-  if (tierConfig.playwrightMcp) {
-    effectiveMcpTools.push({
-      name: 'playwright',
-      command: 'npx',
-      args: ['@playwright/mcp@latest'],
-    });
-  }
-
-  const mcpServers: Record<string, unknown> = {};
-  for (const tool of effectiveMcpTools) {
-    mcpServers[tool.name] = {
-      command: tool.command,
-      args: tool.args || [],
-      env: tool.env || {},
-    };
-  }
-
+function generateSettingsJson(): object {
   return {
-    model: resolveModelId(node.model),
-    permissions: {
-      allow: allowedTools.map(t => `${t}(*)`),
-      deny: [],
-    },
-    mcpServers,
-    env: {
-      TESTING_TIER: node.testing_tier || 'tier1',
+    hooks: {
+      PostToolUse: [
+        {
+          matcher: 'Write|Edit|MultiEdit',
+          hooks: [
+            {
+              type: 'command',
+              command: "echo 'File modified'",
+              timeout: 5,
+            },
+          ],
+        },
+      ],
     },
   };
 }
 
-function resolveModelId(model: string): string {
-  const map: Record<string, string> = {
-    sonnet: 'claude-sonnet-4-6',
-    haiku: 'claude-haiku-4-5-20251001',
-    opus: 'claude-opus-4-6',
+function generateHammerConfig(node: NodeRecord, nodeFolderPath: string): object {
+  return {
+    prompt: node.prompt,
+    cwd: nodeFolderPath,
+    model: node.model,
+    acceptanceChecks: [],
+    subagents: {},
   };
-  return map[model] || 'claude-sonnet-4-6';
+}
+
+function generateWorkflowsSpec(workflows: WorkflowRecord[]): string {
+  const approvedWorkflows = workflows.filter(w => w.approved);
+
+  if (approvedWorkflows.length === 0) {
+    return `/**
+ * Workflow E2E Tests
+ * Auto-generated from stakeholder workflow documentation.
+ */
+import { test, expect } from '@playwright/test';
+
+test.describe('Stakeholder Workflows', () => {
+  test('placeholder - no workflows defined yet', async ({ page }) => {
+    // No workflows have been documented yet.
+    // This test will be populated once workflows are approved.
+    expect(true).toBe(true);
+  });
+});
+`;
+  }
+
+  const testBlocks = approvedWorkflows.map(workflow => {
+    const stepComments = workflow.steps.map(
+      (step, i) => `    // Step ${i + 1}: ${step.action} on ${step.target}${step.value ? ` with value "${step.value}"` : ''} - expected: ${step.expected}`
+    ).join('\n');
+    return `  test('${workflow.name.replace(/'/g, "\\'")}', async ({ page }) => {
+    // ${workflow.description}
+${stepComments}
+    // TODO: Implement steps above
+    expect(true).toBe(true);
+  });`;
+  });
+
+  return `/**
+ * Workflow E2E Tests
+ * Auto-generated from stakeholder workflow documentation.
+ */
+import { test, expect } from '@playwright/test';
+
+test.describe('Stakeholder Workflows', () => {
+${testBlocks.join('\n\n')}
+});
+`;
+}
+
+// ─── Main Generator ──────────────────────────────────────────────────────────
+
+export interface GeneratedContextFile {
+  path: string;
+  type: 'claude-md' | 'settings' | 'hammer-config' | 'workflows-spec';
+}
+
+export interface GenerateContextsResult {
+  generatedFiles: GeneratedContextFile[];
+  leafNodes: string[];
 }
 
 /**
- * Generate and write all context files for an entire project.
- * Creates:
- *   {contextRoot}/{projectId}/CLAUDE.md              — project root context
- *   {contextRoot}/{projectId}/nodes/{nodeId}/CLAUDE.md — per-node context
- *   {contextRoot}/{projectId}/nodes/{nodeId}/settings.json — per-node settings
- *
- * Returns the context root path.
+ * Generate context files for all leaf nodes of a project.
+ * Returns a list of all generated file paths.
  */
-export async function generateAllContexts(projectId: string): Promise<string> {
-  const contextRoot = process.env.CONTEXT_ROOT || join(process.cwd(), 'contexts');
-  const projectDir = join(contextRoot, projectId);
+export async function generateContexts(projectId: string): Promise<GenerateContextsResult> {
+  const projectData = readProjectFile(projectId);
+  const projectDir = getProjectDir(projectId);
+  const { nodes, contracts, stakeholder } = projectData;
 
-  mkdirSync(projectDir, { recursive: true });
+  const generatedFiles: GeneratedContextFile[] = [];
+  const leafNodeNames: string[] = [];
 
-  // Project-level CLAUDE.md
-  const projectClaude = generateProjectClaude(projectId);
-  writeFileSync(join(projectDir, 'CLAUDE.md'), projectClaude, 'utf-8');
+  // Generate files for each leaf node
+  const leafNodes = nodes.filter(n => n.is_leaf);
 
-  // Per-node files
-  const nodes = getProjectNodes(projectId);
-  for (const node of nodes) {
-    const nodeDir = join(projectDir, 'nodes', node.id);
-    mkdirSync(nodeDir, { recursive: true });
+  for (const node of leafNodes) {
+    const slug = nodeNameToSlug(node.name);
+    const nodeFolderPath = path.join(projectDir, slug);
 
-    const nodeClaude = generateNodeClaude(node.id);
-    writeFileSync(join(nodeDir, 'CLAUDE.md'), nodeClaude, 'utf-8');
+    // Create node directory and .claude subdirectory
+    fs.mkdirSync(nodeFolderPath, { recursive: true });
+    fs.mkdirSync(path.join(nodeFolderPath, '.claude'), { recursive: true });
 
-    const settings = generateSettings(node.id);
-    writeFileSync(join(nodeDir, 'settings.json'), JSON.stringify(settings, null, 2), 'utf-8');
+    // Generate CLAUDE.md
+    const claudeMdContent = generateClaudeMdContent(node, projectData, contracts);
+    const claudeMdPath = path.join(nodeFolderPath, 'CLAUDE.md');
+    fs.writeFileSync(claudeMdPath, claudeMdContent, 'utf-8');
+    generatedFiles.push({ path: claudeMdPath, type: 'claude-md' });
 
-    // Store HammerConfig JSON on the node for execution
-    const tierConfig = getTierConfig(node.testing_tier);
-    const allowedTools: string[] = node.allowed_tools ? JSON.parse(node.allowed_tools) : ['Read', 'Write', 'Edit', 'Bash', 'Grep', 'Glob'];
-    const hammerConfig = {
-      model: resolveModelId(node.model),
-      maxTurns: 40,
-      allowedTools,
-      screenshots: { enabled: tierConfig.playwrightMcp ?? false },
-      permissionMode: 'bypassPermissions' as const,
-    };
-    storeHammerConfig(node.id, hammerConfig);
+    // Generate .claude/settings.json
+    const settingsContent = generateSettingsJson();
+    const settingsPath = path.join(nodeFolderPath, '.claude', 'settings.json');
+    fs.writeFileSync(settingsPath, JSON.stringify(settingsContent, null, 2), 'utf-8');
+    generatedFiles.push({ path: settingsPath, type: 'settings' });
+
+    // Generate .hammer-config.json
+    const hammerConfig = generateHammerConfig(node, nodeFolderPath);
+    const hammerConfigPath = path.join(nodeFolderPath, '.hammer-config.json');
+    fs.writeFileSync(hammerConfigPath, JSON.stringify(hammerConfig, null, 2), 'utf-8');
+    generatedFiles.push({ path: hammerConfigPath, type: 'hammer-config' });
+
+    leafNodeNames.push(node.name);
   }
 
-  return projectDir;
+  // Generate tests/e2e/workflows.spec.ts from stakeholder workflows
+  const testsDir = path.join(projectDir, 'tests', 'e2e');
+  fs.mkdirSync(testsDir, { recursive: true });
+  const workflowsSpecContent = generateWorkflowsSpec(stakeholder.workflows);
+  const workflowsSpecPath = path.join(testsDir, 'workflows.spec.ts');
+  fs.writeFileSync(workflowsSpecPath, workflowsSpecContent, 'utf-8');
+  generatedFiles.push({ path: workflowsSpecPath, type: 'workflows-spec' });
+
+  return { generatedFiles, leafNodes: leafNodeNames };
 }

@@ -27,6 +27,12 @@ interface UseTreeReturn extends TreeState {
   approveNode: (nodeId: string, decompose?: boolean) => Promise<void>;
   updateNode: (nodeId: string, updates: Partial<TreeNode>) => Promise<void>;
   deleteNode: (nodeId: string) => Promise<void>;
+  executeNode: (nodeId: string) => Promise<void>;
+  rejectNode: (nodeId: string) => Promise<void>;
+  verifyNode: (nodeId: string) => Promise<void>;
+  // Project-level actions
+  generateContexts: () => Promise<{ generatedFiles: string[]; leafNodes: string[] }>;
+  startExecution: () => Promise<void>;
 }
 
 export function useTree(projectId: string | null): UseTreeReturn {
@@ -204,6 +210,66 @@ export function useTree(projectId: string | null): UseTreeReturn {
     });
   }, [projectId]);
 
+  // Stub: execute a single node via HAMMER
+  const executeNode = useCallback(async (nodeId: string) => {
+    if (!projectId) return;
+    addLog({ message: `Execute node ${nodeId} (not yet implemented)`, timestamp: new Date().toISOString(), type: 'system' });
+  }, [projectId, addLog]);
+
+  // Stub: reject a node (revert to pending)
+  const rejectNode = useCallback(async (nodeId: string) => {
+    if (!projectId) return;
+    const response = await fetch(`/api/projects/${projectId}/nodes/${nodeId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'pending' }),
+    });
+    if (!response.ok) {
+      const err = await response.json() as { error: string };
+      throw new Error(err.error);
+    }
+    addLog({ message: `Rejected node ${nodeId}`, timestamp: new Date().toISOString(), type: 'system' });
+  }, [projectId, addLog]);
+
+  // Stub: verify a parent node after all children complete
+  const verifyNode = useCallback(async (nodeId: string) => {
+    if (!projectId) return;
+    addLog({ message: `Verify node ${nodeId} (not yet implemented)`, timestamp: new Date().toISOString(), type: 'system' });
+  }, [projectId, addLog]);
+
+  // Generate contexts for all leaf nodes
+  const generateContexts = useCallback(async () => {
+    if (!projectId) return { generatedFiles: [], leafNodes: [] };
+    const response = await fetch(`/api/projects/${projectId}/generate-contexts`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    if (!response.ok) {
+      const err = await response.json() as { error: string };
+      throw new Error(err.error);
+    }
+    const data = await response.json() as { generatedFiles: string[]; leafNodes: string[] };
+    addLog({ message: 'Agent contexts generated', timestamp: new Date().toISOString(), type: 'system' });
+    // Refresh tree to pick up status change
+    setTimeout(fetchTree, 500);
+    return data;
+  }, [projectId, addLog, fetchTree]);
+
+  // Start execution
+  const startExecution = useCallback(async () => {
+    if (!projectId) return;
+    const response = await fetch(`/api/projects/${projectId}/start-execution`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    if (!response.ok) {
+      const err = await response.json() as { error: string };
+      throw new Error(err.error);
+    }
+    addLog({ message: 'Execution started', timestamp: new Date().toISOString(), type: 'system' });
+    setTimeout(fetchTree, 500);
+  }, [projectId, addLog, fetchTree]);
+
   return {
     ...state,
     selectedNodeId,
@@ -216,5 +282,10 @@ export function useTree(projectId: string | null): UseTreeReturn {
     approveNode,
     updateNode,
     deleteNode,
+    executeNode,
+    rejectNode,
+    verifyNode,
+    generateContexts,
+    startExecution,
   };
 }

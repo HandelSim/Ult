@@ -16,10 +16,11 @@ test.describe("Persistence", () => {
     await page.fill("[data-testid='project-name-input']", "Persist Test Project");
     await page.fill("[data-testid='project-prompt-input']", "This should persist after refresh");
     await page.click("[data-testid='create-project-submit']");
-    await page.locator("[data-testid='project-list-item']").filter({ hasText: "Persist Test Project" }).waitFor({ timeout: 10000 });
+    await page.locator("[data-testid='project-list-item']").filter({ hasText: "Persist Test Project"  }).first().waitFor({ timeout: 10000 });
 
     const projectId = await page.locator("[data-testid='project-list-item']")
       .filter({ hasText: "Persist Test Project" })
+      .first()
       .getAttribute("data-project-id");
 
     // Full page refresh
@@ -28,7 +29,7 @@ test.describe("Persistence", () => {
 
     // Project should still be in list
     await expect(
-      page.locator("[data-testid='project-list-item']").filter({ hasText: "Persist Test Project" })
+      page.locator("[data-testid='project-list-item']").filter({ hasText: "Persist Test Project" }).first()
     ).toBeVisible({ timeout: 10000 });
 
     // project.json should exist on disk
@@ -49,8 +50,8 @@ test.describe("Persistence", () => {
     await page.fill("[data-testid='project-name-input']", "History Persist Project");
     await page.fill("[data-testid='project-prompt-input']", "Testing conversation persistence");
     await page.click("[data-testid='create-project-submit']");
-    await page.locator("[data-testid='project-list-item']").filter({ hasText: "History Persist Project" }).waitFor({ timeout: 10000 });
-    await page.locator("[data-testid='project-list-item']").filter({ hasText: "History Persist Project" }).click();
+    await page.locator("[data-testid='project-list-item']").filter({ hasText: "History Persist Project"  }).first().waitFor({ timeout: 10000 });
+    await page.locator("[data-testid='project-list-item']").filter({ hasText: "History Persist Project"  }).first().click();
 
     await page.waitForSelector("[data-testid='blacksmith-status'][data-status='idle']", { timeout: 120000 });
 
@@ -59,6 +60,7 @@ test.describe("Persistence", () => {
 
     const projectId = await page.locator("[data-testid='project-list-item']")
       .filter({ hasText: "History Persist Project" })
+      .first()
       .getAttribute("data-project-id");
 
     // Check history file was written
@@ -75,7 +77,7 @@ test.describe("Persistence", () => {
     await page.waitForLoadState("domcontentloaded");
 
     // Re-select project
-    await page.locator("[data-testid='project-list-item']").filter({ hasText: "History Persist Project" }).click();
+    await page.locator("[data-testid='project-list-item']").filter({ hasText: "History Persist Project"  }).first().click();
     await page.waitForTimeout(2000);
 
     // History should be restored
@@ -91,10 +93,11 @@ test.describe("Persistence", () => {
     await page.fill("[data-testid='project-name-input']", "Session File Project");
     await page.fill("[data-testid='project-prompt-input']", "Test session file creation");
     await page.click("[data-testid='create-project-submit']");
-    await page.locator("[data-testid='project-list-item']").filter({ hasText: "Session File Project" }).waitFor({ timeout: 10000 });
+    await page.locator("[data-testid='project-list-item']").filter({ hasText: "Session File Project"  }).first().waitFor({ timeout: 10000 });
 
     const projectId = await page.locator("[data-testid='project-list-item']")
       .filter({ hasText: "Session File Project" })
+      .first()
       .getAttribute("data-project-id");
 
     if (projectId) {

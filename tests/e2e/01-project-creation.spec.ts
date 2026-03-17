@@ -30,7 +30,7 @@ test.describe("Project Creation", () => {
     await page.fill("[data-testid='project-prompt-input']", "Build a simple task manager web app");
     await page.click("[data-testid='create-project-submit']");
     await expect(
-      page.locator("[data-testid='project-list-item']").filter({ hasText: "Test Project Alpha" })
+      page.locator("[data-testid='project-list-item']").filter({ hasText: "Test Project Alpha" }).first()
     ).toBeVisible({ timeout: 15000 });
     await expect(page.locator("[data-testid='tree-canvas']")).toBeVisible({ timeout: 10000 });
     await expect(page.locator("[data-testid='blacksmith-terminal']")).toBeVisible({ timeout: 10000 });
@@ -44,7 +44,7 @@ test.describe("Project Creation", () => {
     await page.fill("[data-testid='project-name-input']", "Tab Test Project");
     await page.fill("[data-testid='project-prompt-input']", "Test tab visibility");
     await page.click("[data-testid='create-project-submit']");
-    await page.locator("[data-testid='project-list-item']").filter({ hasText: "Tab Test Project" }).waitFor({ timeout: 10000 });
+    await page.locator("[data-testid='project-list-item']").filter({ hasText: "Tab Test Project"  }).first().waitFor({ timeout: 10000 });
     await expect(page.locator("[data-testid='right-panel-tab-blacksmith']")).toBeVisible();
     await expect(page.locator("[data-testid='blacksmith-terminal']")).toBeVisible();
   });
@@ -57,7 +57,7 @@ test.describe("Project Creation", () => {
     await page.fill("[data-testid='project-name-input']", "Center Tab Project");
     await page.fill("[data-testid='project-prompt-input']", "Test center tab");
     await page.click("[data-testid='create-project-submit']");
-    await page.locator("[data-testid='project-list-item']").filter({ hasText: "Center Tab Project" }).waitFor({ timeout: 10000 });
+    await page.locator("[data-testid='project-list-item']").filter({ hasText: "Center Tab Project"  }).first().waitFor({ timeout: 10000 });
     await expect(page.locator("[data-testid='center-tab-tree']")).toBeVisible();
     await expect(page.locator("[data-testid='tree-canvas']")).toBeVisible({ timeout: 10000 });
   });

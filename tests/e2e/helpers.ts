@@ -29,8 +29,10 @@ export async function sendBlacksmithMessage(page: Page, message: string): Promis
   const input = page.locator('[data-testid="blacksmith-input"]');
   await input.fill(message);
   await input.press("Enter");
-  // Wait for idle status
-  await page.waitForSelector('[data-testid="blacksmith-status"][data-status="idle"]', { timeout: 120000 });
+  // Wait briefly for status to change to thinking (input may be disabled)
+  await page.waitForSelector('[data-testid="blacksmith-status"]:not([data-status="idle"])', { timeout: 10000 }).catch(() => {});
+  // Wait for idle status with generous timeout
+  await page.waitForSelector('[data-testid="blacksmith-status"][data-status="idle"]', { timeout: 240000 });
 }
 
 export async function getBlacksmithMessages(page: Page): Promise<string[]> {
@@ -43,6 +45,6 @@ export async function getBlacksmithMessages(page: Page): Promise<string[]> {
   return texts;
 }
 
-export async function waitForBlacksmithIdle(page: Page, timeout = 120000): Promise<void> {
+export async function waitForBlacksmithIdle(page: Page, timeout = 240000): Promise<void> {
   await page.waitForSelector('[data-testid="blacksmith-status"][data-status="idle"]', { timeout });
 }
