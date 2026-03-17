@@ -7,7 +7,8 @@
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
     "build": "tsc -p tsconfig.server.json",
     "start": "node ../../dist/server/index.js",
-    "type-check": "tsc -p tsconfig.server.json --noEmit"
+    "type-check": "tsc -p tsconfig.server.json --noEmit",
+    "dev:haiku": "SCHEMA_MODEL=haiku ts-node-dev --respawn --transpile-only src/index.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.30.0",
