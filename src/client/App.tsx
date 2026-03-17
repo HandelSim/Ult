@@ -4,7 +4,6 @@
  */
 import React, { useState, useCallback, useEffect } from 'react';
 import { useTree } from './hooks/useTree';
-import { useNode } from './hooks/useNode';
 import { TreeGraph } from './components/TreeGraph';
 import { NodeDetail } from './components/NodeDetail';
 import { ExecutionLog } from './components/ExecutionLog';
@@ -178,7 +177,10 @@ export default function App() {
   }, []);
 
   const tree = useTree(selectedProjectId);
-  const { node: selectedNode, logs: nodeLogs, clearLogs } = useNode(tree.selectedNodeId);
+  // Derive selected node directly from tree data (no extra API call needed)
+  const selectedNode = tree.nodes.find(n => n.id === tree.selectedNodeId) ?? null;
+  const nodeLogs = tree.logs; // reuse tree logs for execution log panel
+  const clearLogs = tree.clearLogs;
 
   // Sync auto_mode from project data
   useEffect(() => {
@@ -256,10 +258,7 @@ export default function App() {
     }
   }, [selectedProjectId, autoMode]);
 
-  const allLogs = [
-    ...tree.logs,
-    ...nodeLogs.filter(l => !tree.logs.some(tl => tl.id === l.id)),
-  ].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+  const allLogs = tree.logs;
 
   const hasMockup = tree.hasMockup;
 
