@@ -58,6 +58,9 @@ test.describe("Persistence", () => {
     // Send a message
     await sendBlacksmithMessage(page, "Remember this: the secret codeword is PERSISTENCE.");
 
+    // Allow time for history file to be written to disk
+    await page.waitForTimeout(2000);
+
     const projectId = await page.locator("[data-testid='project-list-item']")
       .filter({ hasText: "History Persist Project" })
       .first()
