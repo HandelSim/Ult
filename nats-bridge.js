@@ -67,44 +67,84 @@ function writeInbox(subject, data) {
   fs.appendFileSync(INBOX_LOG, entry);
 }
 
-// Run Claude Sonnet — no timeout, runs until Claude finishes naturally
-// Heartbeat every 2 min shows it's alive; Crown can intervene if stuck
-function runClaude(prompt, onData) {
+// Run Claude Sonnet — streams NDJSON output, publishes text deltas to raven.stream.forge
+// Keeps stdin open for follow-up messages from raven.input.forge
+function runClaude(prompt, onData, nc, requestId) {
   return new Promise((resolve) => {
-    let out = '';
-    const proc = spawn('claude', ['-p', '--dangerously-skip-permissions', '--model', 'claude-sonnet-4-6'], {
+    let finalText = '';
+    let lineBuffer = '';
+    const proc = spawn('claude', [
+      '-p', '--dangerously-skip-permissions', '--model', 'claude-sonnet-4-6',
+      '--output-format', 'stream-json', '--include-partial-messages', '--verbose',
+      '--input-format', 'stream-json',
+    ], {
       env: { ...process.env, HOME: '/home/claude' },
     });
-    proc.stdin.write(prompt);
-    proc.stdin.end();
+
+    // Write initial prompt in stream-json format (keep stdin open)
+    proc.stdin.write(JSON.stringify({ type: 'user', message: { role: 'user', content: prompt } }) + '\n');
+
+    // Subscribe to follow-up messages from Crown
+    let inputSub = null;
+    if (nc) {
+      inputSub = nc.subscribe('raven.input.forge');
+      (async () => {
+        for await (const msg of inputSub) {
+          try {
+            const data = jc.decode(msg.data);
+            const text = data.text || data.message || data.content || '';
+            if (text && !proc.killed) {
+              proc.stdin.write(JSON.stringify({ type: 'user', message: { role: 'user', content: text } }) + '\n');
+              log(`[Forge] Injected follow-up message from Crown: ${text.slice(0, 80)}`);
+            }
+          } catch {}
+        }
+      })();
+    }
+
     proc.stdout.on('data', d => {
-      const chunk = d.toString();
-      out += chunk;
-      if (onData) onData(chunk);
+      lineBuffer += d.toString();
+      const lines = lineBuffer.split('\n');
+      lineBuffer = lines.pop(); // keep incomplete line in buffer
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        try {
+          const event = JSON.parse(line);
+          // Extract text deltas and stream to NATS
+          if (
+            event.type === 'stream_event' &&
+            event.event && event.event.type === 'content_block_delta' &&
+            event.event.delta && event.event.delta.type === 'text_delta' &&
+            event.event.delta.text
+          ) {
+            const text = event.event.delta.text;
+            finalText += text;
+            if (onData) onData(text);
+            if (nc) {
+              nc.publish('raven.stream.forge', jc.encode({
+                agent: 'forge',
+                request_id: requestId,
+                text,
+                timestamp: new Date().toISOString(),
+              }));
+            }
+          }
+          // Capture final result text from result event
+          if (event.type === 'result' && event.result) {
+            if (typeof event.result === 'string') finalText = event.result;
+          }
+        } catch { /* non-JSON line, ignore */ }
+      }
     });
+
     proc.stderr.on('data', d => { log(`[Claude stderr] ${d.toString().trim()}`); });
     proc.on('close', code => {
-      if (code === 0 && out.trim()) resolve(out.trim());
+      if (inputSub) { try { inputSub.unsubscribe(); } catch {} }
+      try { proc.stdin.end(); } catch {}
+      if (code === 0 && finalText.trim()) resolve(finalText.trim());
       else resolve(null);
     });
     proc.on('error', err => { log(`[Claude spawn error] ${err.message}`); resolve(null); });
-  });
-}
-
-// Run Claude Haiku for quick summaries (30-second timeout)
-function runHaiku(prompt) {
-  return new Promise((resolve) => {
-    let out = '';
-    const proc = spawn('claude', ['-p', '--dangerously-skip-permissions', '--model', 'claude-haiku-4-5-20251001'], {
-      env: { ...process.env, HOME: '/home/claude' },
-    });
-    proc.stdin.write(prompt);
-    proc.stdin.end();
-    proc.stdout.on('data', d => { out += d.toString(); });
-    proc.stderr.on('data', () => {});
-    proc.on('close', code => { resolve(code === 0 && out.trim() ? out.trim() : null); });
-    proc.on('error', () => resolve(null));
-    setTimeout(() => { proc.kill(); resolve(null); }, 30000);
   });
 }
 
@@ -198,22 +238,11 @@ Execute the task now. When done, provide a clear summary of exactly what you did
     }
     log('[Forge] Invoking Claude for task...');
     const startTime = Date.now();
-    let recentBuffer = '';
 
-    const heartbeat = setInterval(async () => {
+    // Simple 5-minute "still alive" ping — no summarization, just elapsed time
+    const heartbeat = setInterval(() => {
       const elapsed = Math.round((Date.now() - startTime) / 1000);
-      const buffer = recentBuffer;
-      recentBuffer = ''; // reset for next window
-
-      // Summarize recent output with Haiku
-      let summary = `Still working… ${Math.round(elapsed / 60)}m elapsed`;
-      if (buffer.trim().length > 50) {
-        const haiku = await runHaiku(
-          `You are a technical summarizer. In 1-2 concise sentences, summarize what was just accomplished in the last 2 minutes of work. Focus on concrete actions taken.\n\nRecent output:\n${buffer.slice(-2500)}`
-        );
-        if (haiku) summary = haiku;
-      }
-
+      const summary = `Still working… ${Math.round(elapsed / 60)}m elapsed`;
       nc.publish(raven.subjects.worker('forge', 'progress'), jc.encode({
         guild: 'forge', event: 'progress',
         task: task.slice(0, 100),
@@ -222,10 +251,10 @@ Execute the task now. When done, provide a clear summary of exactly what you did
         summary,
         timestamp: new Date().toISOString(),
       }));
-      log(`[Forge] Heartbeat (${elapsed}s): ${summary.slice(0, 120)}`);
-    }, 120000);
+      log(`[Forge] Heartbeat (${elapsed}s): ${summary}`);
+    }, 300000);
 
-    const result = await runClaude(prompt, (chunk) => { recentBuffer += chunk; });
+    const result = await runClaude(prompt, null, nc, requestId);
     clearInterval(heartbeat);
 
     if (result) {

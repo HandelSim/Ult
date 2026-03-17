@@ -32,6 +32,18 @@ Use SCHEMA instead when the task requires decomposing a large project into multi
 | `raven.ledger.forge` | Publish Haiku work summaries |
 | `raven.vault.request` | Request spending approval |
 
+## Runtime: Session Manager (primary) + NATS Bridge (fallback)
+
+Your container runs **kingdom-session-manager** as the primary runtime. It:
+- Spawns `claude --input-format stream-json --output-format stream-json --verbose`
+- Streams all output to Discord in real-time via `raven.stream.forge`
+- Keeps your Claude session alive between tasks (no cold-start per task)
+- Accepts Crown follow-up messages mid-task via `raven.input.forge`
+
+The legacy `nats-bridge.js` only starts if the session manager is not installed. You do not need to think about this distinction — just work normally.
+
+**Crown follow-up messages** arrive via `raven.input.forge` as new user turns in your conversation. Respond to them naturally. Do NOT poll or wait — they appear automatically when the Crown sends them.
+
 ## Playwright testing workflow
 ```bash
 # DEFAULT — always use CLI (zero agent tokens)
