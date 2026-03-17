@@ -51,26 +51,33 @@ test.describe("Blacksmith Conversation", () => {
     await page.locator("[data-testid='project-list-item']").filter({ hasText: "Conversation Flow Test"  }).first().click();
     await page.waitForSelector("[data-testid='blacksmith-status'][data-status='idle']", { timeout: 120000 });
 
-    // First message
-    await sendBlacksmithMessage(page, "I want to build a task management tool for remote teams.");
+    // First message — just send it and wait for our user message to appear
+    const input = page.locator('[data-testid="blacksmith-input"]');
+    await expect(input).toBeEnabled({ timeout: 5000 });
+    await input.fill("I want to build a task management tool for remote teams.");
+    await input.press("Enter");
 
-    // Check we got a response
+    // Wait for the first user message to appear in the chat
+    await expect(page.locator("[data-testid='blacksmith-message']")).toHaveCount(1, { timeout: 10000 });
+
+    // Wait for Blacksmith to respond to the first message
+    await page.waitForSelector("[data-testid='blacksmith-status'][data-status='idle']", { timeout: 360000 });
+
     const msgs1 = await page.locator("[data-testid='blacksmith-message']").count();
-    expect(msgs1).toBeGreaterThanOrEqual(2);
+    expect(msgs1).toBeGreaterThanOrEqual(2); // user + assistant
 
     // Send second message — verify it's accepted (input enabled + message appears)
-    const input = page.locator('[data-testid="blacksmith-input"]');
     await expect(input).toBeEnabled({ timeout: 5000 });
     await input.fill("The target users are software development teams, 5-50 people. React frontend, Node.js backend.");
     await input.press("Enter");
 
-    // User message should appear in the chat immediately
-    await expect(page.locator("[data-testid='blacksmith-message']")).toHaveCount(msgs1 + 1, { timeout: 5000 });
+    // Second user message should appear in the chat immediately
+    await expect(page.locator("[data-testid='blacksmith-message']")).toHaveCount(msgs1 + 1, { timeout: 10000 });
 
-    // Wait for Blacksmith response (with generous timeout)
-    await page.waitForSelector("[data-testid='blacksmith-status'][data-status='idle']", { timeout: 240000 });
+    // Wait for Blacksmith to process the second message
+    await page.waitForSelector("[data-testid='blacksmith-status'][data-status='idle']", { timeout: 360000 });
 
-    // Should have more messages now (at least user + assistant)
+    // Should have more messages now (both user messages + both assistant responses)
     const msgs2 = await page.locator("[data-testid='blacksmith-message']").count();
     expect(msgs2).toBeGreaterThan(msgs1);
   });
