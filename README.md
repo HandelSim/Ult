@@ -61,4 +61,4 @@ SCHEMA is the **Forge** guild's primary software delivery platform. Tasks arrive
 
 ## License
 
-Private — HandelSim Kingdom
+Private — Kingdom
