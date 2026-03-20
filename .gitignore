@@ -1,10 +1,8 @@
 node_modules/
 dist/
-data/
-*.db
+client/dist/
+server/dist/
+*.log
 .env
-workspace/*
-!workspace/.gitkeep
-test-projects/
-deploy_key
-deploy_key.pub
+test-results/
+playwright-report/

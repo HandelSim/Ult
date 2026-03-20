@@ -1,64 +1,103 @@
-# SCHEMA — Self-Constructing Hierarchy for Entire Managed Applications
+# SCHEMA — Thin GUI Over SMITH
 
-SCHEMA is a recursive AI agent orchestration platform. It decomposes high-level goals into executable sub-tasks arranged as a tree, then dispatches autonomous Claude agents to execute each leaf node.
+SCHEMA is a lightweight web interface that visualizes what SMITH does. It reads `project.json` files managed by SMITH, renders the folder hierarchy as an interactive tree, and provides a chat interface to talk to SMITH directly.
 
-## Overview
-
-- **Recursive decomposition**: Break any project into a hierarchical tree of tasks
-- **Agent orchestration**: Each leaf node becomes a Claude sub-agent with its own workspace, prompt, and execution context
-- **Real-time monitoring**: SSE-based live updates stream execution logs to the UI tree graph
-- **Contract-driven**: Nodes negotiate contracts (inputs/outputs) before execution begins
-- **Mode control**: Auto-approve or manual-review each node's children before they execute
-- **HAMMER integration**: Uses HAMMER for SDK wrapping, retry logic, acceptance checking, and session management
+```
+SMITH (architect) → writes project.json, conversation.jsonl, mockups/
+SCHEMA (GUI)      → reads project.json live, renders tree, proxies chat
+HAMMER (builder)  → reads CLAUDE.md per folder, builds, updates status
+```
 
 ## Architecture
 
 ```
-SCHEMA
-├── src/client/       React + Vite frontend (tree visualization, node control)
-├── src/server/       Express API + SQLite persistence
-│   ├── routes/       REST endpoints for projects, nodes, contracts
-│   ├── services/     Decomposition, execution (via HAMMER), verification, workspace
-│   └── db/           SQLite schema and connection
-├── scripts/          Boundary enforcement, secret detection, contract guards
-├── tests/            Playwright e2e tests
-└── workspace/        Per-node working directories (gitignored)
+schema/
+  server/          Express + WebSocket + SSE + chokidar
+    src/
+      index.ts         entry point (port 3000)
+      config.ts        SMITH_WORKSPACE, PORT env vars
+      projects.ts      read project.json / projects-index.json
+      file-watcher.ts  chokidar watches projects/**/project.json
+      ws.ts            WebSocket — broadcasts project updates to clients
+      smith-proxy.ts   spawns/manages SMITH claude sessions
+      routes/
+        projects.ts    GET /api/projects, GET /api/projects/:id
+        smith.ts       POST /api/smith/start|message|resume, GET /api/smith/stream (SSE)
+  client/          React 18 + Vite + Tailwind + React Flow
+    src/
+      App.tsx          main shell: sidebar + tree + detail + chat/mockup panels
+      components/
+        Sidebar.tsx       project list with status indicators
+        TreeView.tsx      React Flow folder hierarchy
+        FolderDetail.tsx  folder metadata, contracts, files, stakeholder notes
+        SmithChat.tsx     SSE chat with SMITH (supports adversary mode)
+        MockupPreview.tsx iframe mockup renderer
+        StatusBar.tsx     connection status + project count
+        NewProjectDialog.tsx  modal to kick off new SMITH session
+      hooks/
+        useWebSocket.ts   auto-reconnecting WebSocket hook
+  tests/             Playwright test suite
 ```
 
-## Quick Start
+## Setup
 
 ```bash
+# Install dependencies
 npm install
-npm run dev        # starts server (3001) + client (3000) concurrently
+cd server && npm install && cd ..
+cd client && npm install && cd ..
+
+# Build
+cd server && npm run build && cd ..
+cd client && npm run build && cd ..
 ```
 
-## Environment
+## Running
 
-Copy `.env.example` to `.env` and set:
-- `ANTHROPIC_API_KEY` — required for agent execution
-- `PORT_API` — server port (default: 3001)
+```bash
+# Production (serves built client on same port)
+SMITH_WORKSPACE=~/smith-projects PORT=3000 npm start
 
-## Usage
+# Development (hot reload)
+SMITH_WORKSPACE=~/smith-projects npm run dev
+# → server on :3000, client on :5173 (proxied)
+```
 
-1. Create a project and describe your goal
-2. SCHEMA auto-decomposes it into a task tree
-3. Review/approve nodes (or enable auto-approve)
-4. Watch agents execute leaf nodes in real-time
-5. Review logs, contracts, and outputs per node
+## Environment variables
 
-## Scripts
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `SMITH_WORKSPACE` | `~/smith-projects` | Path to smith-projects workspace |
+| `PORT` | `3000` | Server listen port |
+| `SMITH_MODEL` | `opus` | Model for SMITH sessions |
+| `SMITH_DIR` | `~/smith` | Path to SMITH installation |
 
-| Script | Purpose |
-|--------|---------|
-| `scripts/enforce_boundaries.py` | Prevent agents from reading outside workspace |
-| `scripts/detect_secrets.py` | Block secret leakage in agent outputs |
-| `scripts/verify_contracts.py` | Check node contracts are fulfilled |
-| `scripts/check_acceptance.py` | Run acceptance criteria checks |
+## API
 
-## Part of the Kingdom
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/health` | Health check |
+| GET | `/api/projects` | List all projects |
+| GET | `/api/projects/:id` | Get project.json for a project |
+| GET | `/api/projects/:id/mockup/:file` | Serve mockup HTML |
+| POST | `/api/smith/start/:id` | Start SMITH session for project |
+| POST | `/api/smith/message/:id` | Send message to SMITH |
+| POST | `/api/smith/resume/:id` | Resume by session ID |
+| GET | `/api/smith/stream/:id` | SSE stream of SMITH output |
+| WS | `/ws` | Live project.json updates |
 
-SCHEMA is the **Forge** guild's primary software delivery platform. Tasks arrive via NATS (`raven.forge.assigned`) and are executed as SCHEMA projects.
+## Testing
 
-## License
+```bash
+# API tests (no browser deps required)
+SMITH_WORKSPACE=~/smith-projects npx playwright test
 
-Private — Kingdom
+# Browser tests require system X11 libraries:
+# apt-get install libxfixes3 libxcomposite1 libxrandr2 libxdamage1
+```
+
+## Design
+
+- Dark theme: `#0a0e17` background, `#6366f1` accent
+- Fonts: Outfit (UI), JetBrains Mono (code)
+- Status colors: green=complete, blue=executing, yellow=in-progress, red=failed

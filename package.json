@@ -1,35 +1,20 @@
 {
   "name": "schema",
-  "version": "1.0.0",
-  "description": "SCHEMA - Self-Constructing Hierarchy for Entire Managed Applications",
+  "version": "2.0.0",
+  "description": "SCHEMA — thin GUI over SMITH",
   "private": true,
-  "workspaces": [
-    "src/client",
-    "src/server"
-  ],
   "scripts": {
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
-    "dev:server": "npm run dev --workspace=src/server",
-    "dev:client": "npm run dev --workspace=src/client",
-    "build": "npm run build:server && npm run build:client",
-    "build:server": "cd src/server && npx tsc -p tsconfig.server.json && mkdir -p ../../dist/server/db && cp db/schema.sql ../../dist/server/db/schema.sql",
-    "build:client": "cd src/client && npx vite build",
-    "start": "NODE_ENV=production node dist/server/index.js",
-    "lint": "eslint 'src/**/*.{ts,tsx}' --fix",
-    "type-check": "tsc --noEmit"
+    "dev:server": "cd server && npm run dev",
+    "dev:client": "cd client && npm run dev",
+    "build": "cd server && npm run build && cd ../client && npm run build",
+    "start": "node server/dist/index.js",
+    "test": "npx playwright test"
   },
   "devDependencies": {
-    "@playwright/test": "^1.58.2",
-    "@types/node": "^20.11.0",
+    "@playwright/test": "^1.45.3",
+    "@types/node": "^20.14.2",
     "concurrently": "^8.2.2",
-    "typescript": "^5.3.3"
-  },
-  "engines": {
-    "node": ">=20.0.0"
-  },
-  "dependencies": {
-    "@handelSim/hammer": "file:../tmp/hammer",
-    "kingdom-raven": "git+https://github.com/HandelSim/kingdom-raven.git",
-    "nats": "^2.29.3"
+    "typescript": "^5.5.2"
   }
 }
